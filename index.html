@@ -56,7 +56,8 @@
     font-size:20px; color:var(--star);
     text-shadow:0 0 10px rgba(243,199,125,0.45);
   }
-  .hud .mult{ font-size:12px; color:var(--ok); margin-top:2px; }
+  .hud .mult{ font-size:12px; color:var(--ok); margin-top:2px; transition:transform 0.15s ease; }
+  .hud .mult.bump{ transform:scale(1.55); }
   .hint{
     position:absolute; left:0; right:0; top:44%;
     text-align:center; color:#9fb0e0; font-size:12.5px;
@@ -235,7 +236,7 @@
   // Master bus with a lightweight delay-based "reverb" send so every sound
   // has a bit of air/space (the ASMR feel), plus a continuous deep drone.
   let actx = null, masterGain, dryGain, reverbDelay, reverbFilter, reverbFeedback, reverbWet;
-  let droneStarted = false, droneGain;
+  let droneStarted = false, droneGain, shimmerGain;
 
   function ensureAudio(){
     if(actx) return;
@@ -314,6 +315,15 @@
     lfo2.connect(lfo2Gain); lfo2Gain.connect(o2.detune);
 
     [o1,o2,sub,lfo,lfo2].forEach(o=>o.start());
+
+    // shimmer layer: silent at baseline, brightens as the combo multiplier climbs
+    shimmerGain = actx.createGain(); shimmerGain.gain.value = 0;
+    shimmerGain.connect(masterGain);
+    const sh1 = actx.createOscillator(); sh1.type = 'sine'; sh1.frequency.value = 262;
+    const sh2 = actx.createOscillator(); sh2.type = 'sine'; sh2.frequency.value = 262*1.012;
+    const shFilt = actx.createBiquadFilter(); shFilt.type = 'bandpass'; shFilt.frequency.value = 700; shFilt.Q.value = 0.8;
+    sh1.connect(shFilt); sh2.connect(shFilt); shFilt.connect(shimmerGain);
+    [sh1,sh2].forEach(o=>o.start());
   }
 
   const sfx = {
@@ -395,13 +405,24 @@
   let shakeT = 0;
   let coreFlashT = 0;      // text fade timer
   let coreFillT = 0, coreFillMax = 0.55, coreExploded = false; // screen-filling glow sequence
-  let flashGrowDur = 0.24, flashLabel = null, flashSecondaryRgb = '255,215,106', flashBig = true;
+  let flashGrowDur = 0.24, flashLabel = null, flashSecondaryRgb = '255,215,106', flashBig = true, flashMilestone = false;
   let grazedFlags;
   let totalRuns = 0;
   let isLearningRun = false;
   let speedScale = 1;
   let shipSpeedCur = SHIP_SPEED;
   let invulnT = 0;
+  let timeScale = 1, timeScaleTarget = 1; // for cinematic slow-mo on death
+  let displayScore = 0; // lerped toward `score` for a smooth count-up
+  let floatingTexts = [];
+  let lastComboTier = 0;
+  const canVibrate = typeof navigator !== 'undefined' && !!navigator.vibrate;
+  function vibrate(pattern){ if(canVibrate){ try{ navigator.vibrate(pattern); }catch(e){} } }
+
+  const COMBO_WORDS = { 2:'NICE', 3:'GREAT', 4:'AWESOME', 5:'INCREDIBLE', 6:'UNREAL' };
+  function spawnFloatingText(text, color, x, y){
+    floatingTexts.push({ text, color, x, y, life:1.1, maxLife:1.1, vy:-42 });
+  }
 
   function ringHazardKey(ri, hi){ return ri+'_'+hi; }
 
@@ -452,6 +473,10 @@
     coreFillT = 0;
     coreExploded = false;
     invulnT = 0.6;
+    timeScale = 1; timeScaleTarget = 1;
+    displayScore = 0;
+    floatingTexts = [];
+    lastComboTier = 0;
     { const requiredGap = shipSpeedCur * invulnT + 0.3;
       for(let i=0;i<rings.length;i++) placeSafeHazards(i, shipAngle, requiredGap); }
   }
@@ -479,6 +504,7 @@
     flashLabel = opts.label || null;
     flashSecondaryRgb = opts.secondaryColorRgb;
     flashBig = !!opts.big;
+    flashMilestone = !!opts.milestone;
     coreFlashT = flashLabel ? 1.4 : 0;
   }
 
@@ -506,9 +532,18 @@
     depth++;
     bestDepth = Math.max(bestDepth, depth);
 
+    const milestone = depth % 5 === 0;
     coreFlashT = 0; // set by triggerFlash below
     sfx.coreRise();
-    triggerFlash({ duration:0.55, growDur:0.24, label:'CORE REACHED', secondaryColorRgb: hexToRgb(hazardColor()), big:true });
+    triggerFlash({
+      duration: milestone ? 0.75 : 0.55,
+      growDur: milestone ? 0.3 : 0.24,
+      label: milestone ? `DEPTH ${depth} REACHED` : 'CORE REACHED',
+      secondaryColorRgb: hexToRgb(hazardColor()),
+      big: true,
+      milestone
+    });
+    vibrate(milestone ? [30,50,30,50,60] : [30,40,50]);
 
     if(droneGain && actx){
       droneGain.gain.linearRampToValueAtTime(Math.min(0.09, 0.055 + depth*0.003), actx.currentTime + 0.4);
@@ -550,6 +585,11 @@
     state = 'dead';
     sfx.death();
     shakeT = 0.4;
+    timeScaleTarget = 0.12;
+    setTimeout(()=>{ timeScaleTarget = 1; }, 480);
+    vibrate([40,30,70]);
+    displayScore = score;
+    scoreEl.textContent = Math.round(score);
     best = Math.max(best, Math.round(score));
     finalScoreEl.textContent = Math.round(score);
     bestEl.textContent = best;
@@ -592,11 +632,21 @@
             multiplier = Math.min(6, multiplier + 0.28);
             score += 8 * multiplier;
             sfx.graze(multiplier);
+            vibrate(12);
           }
         } else if(dMin > GRAZE_THRESH*2.2){
           grazedFlags[key] = false;
         }
       });
+
+      const comboTier = Math.floor(multiplier);
+      if(comboTier > lastComboTier && COMBO_WORDS[comboTier]){
+        lastComboTier = comboTier;
+        spawnFloatingText(COMBO_WORDS[comboTier], hazardColor(), cx, cy - 150);
+        if(multEl){ multEl.classList.add('bump'); setTimeout(()=>multEl.classList.remove('bump'), 160); }
+      } else if(multiplier < 1.4){
+        lastComboTier = 0;
+      }
 
       if(orb && orb.ring === ringIndex){
         const d = Math.abs(normSigned(shipAngle - orb.angle));
@@ -615,9 +665,12 @@
       trail.push({x: cx+shipRadius*Math.cos(shipAngle), y: cy+shipRadius*Math.sin(shipAngle), life:0.25});
       if(trail.length > 18) trail.shift();
 
-      scoreEl.textContent = Math.round(score);
+      displayScore += (score - displayScore) * Math.min(1, dt*6);
+      scoreEl.textContent = Math.round(displayScore);
       depthEl.textContent = depth;
       multEl.textContent = 'x' + multiplier.toFixed(1);
+
+      if(shimmerGain) shimmerGain.gain.value = Math.max(0, Math.min(0.06, (multiplier-1)/5 * 0.06));
     }
 
     // screen-filling glow sequence: grow, hold/peak, then explode + fade
@@ -626,13 +679,15 @@
       const elapsed = coreFillMax - coreFillT;
       if(!coreExploded && elapsed >= flashGrowDur){
         coreExploded = true;
-        const burstN = flashBig ? 46 : 24;
-        const r1 = flashBig ? 520 : 320;
-        const r2 = flashBig ? 640 : 440;
+        const scaleUp = flashMilestone ? 1.35 : 1;
+        const burstN = Math.round((flashBig ? 46 : 24) * scaleUp);
+        const r1 = Math.round((flashBig ? 520 : 320) * scaleUp);
+        const r2 = Math.round((flashBig ? 640 : 440) * scaleUp);
         const d1 = flashBig ? 1.0 : 0.7;
         const d2 = flashBig ? 1.3 : 0.95;
         spawnRipple(cx, cy, r1, '255,243,214', d1, flashBig?4:3);
         spawnRipple(cx, cy, r2, flashSecondaryRgb, d2, flashBig?3:2);
+        if(flashMilestone) spawnRipple(cx, cy, r2*1.25, '111,227,201', d2*1.15, 2);
         spawnBurst(cx, cy, burstN, '255,243,214', flashBig?190:150);
         if(flashBig) sfx.coreBoom(); else sfx.orbBoom();
       }
@@ -644,6 +699,8 @@
     trail = trail.filter(p=>p.life>0);
     ripples.forEach(r=>r.life-=dt);
     ripples = ripples.filter(r=>r.life>0);
+    floatingTexts.forEach(f=>{ f.y += f.vy*dt; f.life -= dt; });
+    floatingTexts = floatingTexts.filter(f=>f.life>0);
     if(shakeT>0) shakeT = Math.max(0, shakeT-dt);
     if(coreFlashT>0) coreFlashT = Math.max(0, coreFlashT-dt);
   }
@@ -678,11 +735,21 @@
     }
     ctx.restore();
 
-    // ambient color wash tied to the current level's obstacle color
+    // living nebula backdrop — soft drifting color blobs tied to the current level's theme
     ctx.save();
-    ctx.globalAlpha = 0.05 + 0.02*Math.sin(t*0.4);
-    ctx.fillStyle = hazardColor();
-    ctx.fillRect(0,0,LW,LH);
+    ctx.globalCompositeOperation = 'lighter';
+    const nebulaRgb = [hexToRgb(hazardColor()), '111,227,201', '243,199,125'];
+    for(let i=0;i<3;i++){
+      const ang = t*0.045*(i%2===0?1:-1) + i*2.35;
+      const nx = cx + Math.cos(ang)*190;
+      const ny = cy + Math.sin(ang*0.7)*190;
+      const rad = 210 + 60*Math.sin(t*0.28 + i*1.8);
+      const ng = ctx.createRadialGradient(nx,ny,0, nx,ny, rad);
+      ng.addColorStop(0, `rgba(${nebulaRgb[i]},0.16)`);
+      ng.addColorStop(1, `rgba(${nebulaRgb[i]},0)`);
+      ctx.fillStyle = ng;
+      ctx.beginPath(); ctx.arc(nx,ny,rad,0,TAU); ctx.fill();
+    }
     ctx.restore();
 
     const pulse = 1 + 0.04*Math.sin(t*1.6) + (coreFlashT>0 ? coreFlashT*0.5 : 0);
@@ -703,11 +770,12 @@
       ctx.lineWidth = ri===ringIndex ? 2 : 1;
       ctx.stroke();
 
-      ring.hazards.forEach(hz => {
+      ring.hazards.forEach((hz, hi) => {
         const { start, width } = hazardState(ring, hz);
+        const pulseW = 13 + 2.2*Math.sin(t*3 + ri*1.7 + hi*2.1);
         ctx.beginPath();
         ctx.arc(cx,cy,ring.radius,start,start+width);
-        ctx.lineWidth = 13;
+        ctx.lineWidth = pulseW;
         ctx.strokeStyle = hCol;
         ctx.shadowColor = hCol;
         ctx.shadowBlur = 16;
@@ -734,6 +802,16 @@
       ctx.shadowBlur = 14;
       ctx.fill();
       ctx.shadowBlur = 0;
+
+      for(let k=0;k<2;k++){
+        const sAng = t*3.2 + orb.phase + k*Math.PI;
+        const spx = ox2 + Math.cos(sAng)*(s+11);
+        const spy = oy2 + Math.sin(sAng)*(s+11);
+        ctx.beginPath();
+        ctx.arc(spx,spy,1.8,0,TAU);
+        ctx.fillStyle = 'rgba(255,243,214,0.85)';
+        ctx.fill();
+      }
       ctx.restore();
     }
 
@@ -839,13 +917,33 @@
       ctx.fillRect(0,0,LW,LH);
     }
 
+    // floating combo callouts ("NICE", "GREAT", ...)
+    floatingTexts.forEach(f=>{
+      const p = 1 - f.life/f.maxLife;
+      const alpha = f.life/f.maxLife;
+      const scale = p < 0.25 ? easeOutCubic(p/0.25) : 1;
+      ctx.save();
+      ctx.translate(f.x, f.y);
+      ctx.scale(scale, scale);
+      ctx.globalAlpha = alpha;
+      ctx.font = 'bold 20px Courier New, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = f.color;
+      ctx.shadowColor = f.color;
+      ctx.shadowBlur = 14;
+      ctx.fillText(f.text, 0, 0);
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    });
+    ctx.globalAlpha = 1;
+
     if(coreFlashT > 0 && flashLabel){
       ctx.globalAlpha = Math.min(1, coreFlashT/0.5);
-      ctx.font = 'bold 22px Courier New, monospace';
+      ctx.font = flashMilestone ? 'bold 26px Courier New, monospace' : 'bold 22px Courier New, monospace';
       ctx.textAlign = 'center';
-      ctx.fillStyle = '#fff3d6';
-      ctx.shadowColor = '#f3c77d';
-      ctx.shadowBlur = 18;
+      ctx.fillStyle = flashMilestone ? '#eaf6ff' : '#fff3d6';
+      ctx.shadowColor = flashMilestone ? '#6fe3c9' : '#f3c77d';
+      ctx.shadowBlur = flashMilestone ? 24 : 18;
       ctx.fillText(flashLabel, cx, cy - 70);
       ctx.shadowBlur = 0;
       ctx.globalAlpha = 1;
@@ -856,8 +954,10 @@
 
   let last = performance.now();
   function loop(now){
-    const dt = Math.min(0.033, (now-last)/1000);
+    const realDt = Math.min(0.033, (now-last)/1000);
     last = now;
+    timeScale += (timeScaleTarget - timeScale) * Math.min(1, realDt*8);
+    const dt = realDt * timeScale;
     update(dt);
     draw();
     requestAnimationFrame(loop);
