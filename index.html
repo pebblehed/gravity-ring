@@ -65,6 +65,7 @@
     transition:opacity 0.6s ease;
     text-shadow:0 0 10px rgba(159,176,224,0.5);
     padding:0 30px;
+    opacity:0;
   }
   .overlay{
     position:absolute; inset:0;
@@ -447,31 +448,56 @@
     });
   }
 
-  // Re-bases a ring's hazards so the ship has a genuine reaction window.
-  // IMPORTANT: a hazard is an ARC with real width, not a point. Checking only
-  // "is the arc's start far enough ahead" isn't sufficient — a random angle can
-  // land just BEHIND the ship, close enough that the ship is already sitting
-  // inside (or just past) that arc, which the old one-sided check didn't catch.
-  // So we pick the ship-relative offset directly within the one true safe
-  // range: far enough past the trailing edge of the previous wrap, and far
-  // enough before the arc reaches the ship again.
-  const REACTION_TIME = 0.45; // desired seconds of real dodge-room after the shield drops
-  function placeSafeHazards(ringIdx, angle, invulnDuration){
+  // Re-bases a ring's hazards so the ship has a genuine reaction window once
+  // everything unfreezes together. IMPORTANT: a hazard is an ARC with real
+  // width, not a point. Checking only "is the arc's start far enough ahead"
+  // isn't sufficient — a random angle can land just BEHIND the ship, close
+  // enough that the ship is already sitting inside (or just past) that arc,
+  // which a one-sided check wouldn't catch. So we pick the ship-relative
+  // offset directly within the one true safe range: far enough past the
+  // trailing edge of the previous wrap, and far enough before the arc
+  // reaches the ship again. Since the ship is frozen for the whole shield
+  // (see update()), there's no need to account for its own travel here —
+  // only for how fast the gap closes once both start moving again.
+  // Hazards on the same ring all share that ring's rotation speed, so their
+  // relative spacing never changes once placed — meaning it's enough to
+  // prevent overlap here, at placement time, and they'll stay separated forever.
+  const REACTION_TIME = 0.45; // desired seconds of real dodge-room after everything unfreezes
+  const OBSTACLE_GAP = 0.12;  // minimum clear space kept between two hazards on the same ring
+  function arcsOverlap(a1, w1, a2, w2, gap){
+    const d1 = norm01(a2 - a1);
+    const d2 = norm01(a1 - a2);
+    return d1 < w1 + gap || d2 < w2 + gap;
+  }
+  function placeSafeHazards(ringIdx, angle){
     const ring = rings[ringIdx];
     const ringSpeedSigned = ring.baseSpeed * difficulty * speedScale;
-    // worst case: this ring's rotation is moving TOWARD the ship (opposite direction),
-    // which adds directly to how fast the gap closes once unfrozen
-    const postShieldClosingRate = shipSpeedCur + Math.max(0, -ringSpeedSigned);
-    const requiredForwardGap = shipSpeedCur*invulnDuration + postShieldClosingRate*REACTION_TIME + 0.15;
+    // Two distinct dangers once everything unfreezes:
+    //  - a hazard AHEAD closes in if it's moving toward the ship (opposite direction)
+    //  - a hazard BEHIND can catch up from behind if it's moving the SAME direction
+    //    as the ship but FASTER (this happens on the spawn ring at higher difficulty,
+    //    since its rotation speed scales past the ship's fixed speed)
+    const forwardClosingRate  = shipSpeedCur + Math.max(0, -ringSpeedSigned);
+    const trailingClosingRate = Math.max(0, ringSpeedSigned - shipSpeedCur);
+    const requiredForwardGap  = forwardClosingRate*REACTION_TIME + 0.15;
+    const requiredTrailingGap = trailingClosingRate*REACTION_TIME + 0.15;
+    const widthMult = isLearningRun ? 1 : Math.min(1.3, 1 + (depth-1)*0.025);
+    const placed = []; // hazards already placed on this ring during this call
     ring.hazards.forEach(h => {
-      const widthMult = isLearningRun ? 1 : Math.min(1.3, 1 + (depth-1)*0.025);
       const w = h.width * widthMult;
-      const trailingBuffer = 0.15;
-      let lo = w + trailingBuffer;           // ship must be at least this far PAST the arc already
+      let lo = w + requiredTrailingGap;      // ship must be at least this far PAST the arc already
       let hi = TAU - requiredForwardGap;      // arc must be at least this far AHEAD of the ship
       if(hi <= lo) hi = lo + 0.1;             // defensive fallback, shouldn't trigger in practice
-      const rel = lo + Math.random()*(hi-lo);
-      h.angle = norm01(angle - rel);
+
+      let candidateAngle, tries = 0;
+      do {
+        const rel = lo + Math.random()*(hi-lo);
+        candidateAngle = norm01(angle - rel);
+        tries++;
+      } while(tries < 60 && placed.some(p => arcsOverlap(candidateAngle, w, p.angle, p.width, OBSTACLE_GAP)));
+
+      h.angle = candidateAngle;
+      placed.push({ angle: candidateAngle, width: w });
     });
   }
 
@@ -498,7 +524,7 @@
     displayScore = 0;
     floatingTexts = [];
     lastComboTier = 0;
-    for(let i=0;i<rings.length;i++) placeSafeHazards(i, shipAngle, invulnT);
+    for(let i=0;i<rings.length;i++) placeSafeHazards(i, shipAngle);
   }
 
   function spawnBurst(x, y, n, color, speed){
@@ -577,7 +603,7 @@
     // "reaction window" is real on paper but invisible to the player.
     ringIndex = rings.length - 1;
     invulnT = flashDuration + 0.15;
-    for(let i=0;i<rings.length;i++) placeSafeHazards(i, shipAngle, invulnT);
+    for(let i=0;i<rings.length;i++) placeSafeHazards(i, shipAngle);
     orb = newOrb();
   }
 
@@ -627,11 +653,19 @@
     difficulty = Math.min(3.2, 1 + (depth-1)*0.16 + t*0.003);
 
     if(state === 'playing'){
-      shipAngle = norm01(shipAngle + shipSpeedCur*dt);
       shipRadius = rings[ringIndex].radius;
 
-      if(invulnT > 0) invulnT = Math.max(0, invulnT - dt);
-      if(invulnT <= 0) advanceHazards(dt);
+      if(invulnT > 0){
+        invulnT = Math.max(0, invulnT - dt);
+        // world is fully paused during the shield: the ship does NOT advance
+        // its angle either, and hazards don't rotate (advanceHazards below is
+        // skipped). Everything holds in its safely-placed configuration and
+        // starts moving together the instant the shield drops — so there's
+        // no window where the ship can "catch up" to a motionless hazard.
+      } else {
+        shipAngle = norm01(shipAngle + shipSpeedCur*dt);
+        advanceHazards(dt);
+      }
 
       score += dt * 2.2 * multiplier;
       multiplier += (1 - multiplier) * dt * 0.18;
