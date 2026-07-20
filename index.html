@@ -382,11 +382,11 @@
   // ringIndex 0 = innermost (closest to the star / the core), last index = outermost (starting edge)
   function makeRings(){
     return [
-      { radius:60,  baseSpeed: 0.55, hazards:[{base:0.0, width:0.85}] },
-      { radius:100, baseSpeed:-0.70, hazards:[{base:1.6, width:0.75}] },
-      { radius:140, baseSpeed: 0.85, hazards:[{base:0.3, width:0.62},{base:3.5, width:0.55}] },
-      { radius:180, baseSpeed:-0.95, hazards:[{base:2.1, width:0.58},{base:5.0, width:0.5}] },
-      { radius:220, baseSpeed: 1.15, hazards:[{base:0.8, width:0.5},{base:2.9, width:0.45},{base:4.8, width:0.45}] },
+      { radius:60,  baseSpeed: 0.55, hazards:[{angle:0.0, width:0.85}] },
+      { radius:100, baseSpeed:-0.70, hazards:[{angle:1.6, width:0.75}] },
+      { radius:140, baseSpeed: 0.85, hazards:[{angle:0.3, width:0.62},{angle:3.5, width:0.55}] },
+      { radius:180, baseSpeed:-0.95, hazards:[{angle:2.1, width:0.58},{angle:5.0, width:0.5}] },
+      { radius:220, baseSpeed: 1.15, hazards:[{angle:0.8, width:0.5},{angle:2.9, width:0.45},{angle:4.8, width:0.45}] },
     ];
   }
 
@@ -400,7 +400,6 @@
   let particles, trail, ripples;
   let orb;
   let t, depth, difficulty;
-  let hazardTime = 0; // advances only while NOT shielded, so hazards fully freeze during spawn invulnerability
   let state;
   let shakeT = 0;
   let coreFlashT = 0;      // text fade timer
@@ -432,24 +431,47 @@
   }
 
   function hazardState(ring, hz){
-    const speed = ring.baseSpeed * difficulty * speedScale;
     const widthMult = isLearningRun ? 1 : Math.min(1.3, 1 + (depth-1)*0.025);
-    const start = norm01(hz.base + speed*hazardTime);
-    return { start, width: hz.width * widthMult };
+    return { start: hz.angle, width: hz.width * widthMult };
   }
 
-  // Re-bases a ring's hazards so that, at this instant, the forward gap between
-  // the ship's angle and each hazard is at least `requiredGap` radians. Only
-  // the forward direction matters (that's the only way the ship can ever
-  // reach a hazard), so this is a one-sided check, not a symmetric band.
-  function placeSafeHazards(ringIdx, angle, requiredGap){
+  // The only place hazard angles change. Runs once per unshielded frame and
+  // nudges each hazard forward by a small increment — no formula involving
+  // elapsed time, so there's nothing that can drift or amplify over a long
+  // session. On shielded frames this simply isn't called: hazards are
+  // genuinely frozen, not just "slowed."
+  function advanceHazards(dt){
+    rings.forEach(ring => {
+      const speed = ring.baseSpeed * difficulty * speedScale;
+      ring.hazards.forEach(hz => { hz.angle = norm01(hz.angle + speed*dt); });
+    });
+  }
+
+  // Re-bases a ring's hazards so the ship has a genuine reaction window.
+  // IMPORTANT: a hazard is an ARC with real width, not a point. Checking only
+  // "is the arc's start far enough ahead" isn't sufficient — a random angle can
+  // land just BEHIND the ship, close enough that the ship is already sitting
+  // inside (or just past) that arc, which the old one-sided check didn't catch.
+  // So we pick the ship-relative offset directly within the one true safe
+  // range: far enough past the trailing edge of the previous wrap, and far
+  // enough before the arc reaches the ship again.
+  const REACTION_TIME = 0.45; // desired seconds of real dodge-room after the shield drops
+  function placeSafeHazards(ringIdx, angle, invulnDuration){
     const ring = rings[ringIdx];
-    const speed = ring.baseSpeed * difficulty * speedScale;
+    const ringSpeedSigned = ring.baseSpeed * difficulty * speedScale;
+    // worst case: this ring's rotation is moving TOWARD the ship (opposite direction),
+    // which adds directly to how fast the gap closes once unfrozen
+    const postShieldClosingRate = shipSpeedCur + Math.max(0, -ringSpeedSigned);
+    const requiredForwardGap = shipSpeedCur*invulnDuration + postShieldClosingRate*REACTION_TIME + 0.15;
     ring.hazards.forEach(h => {
-      let startTarget;
-      do { startTarget = Math.random()*TAU; }
-      while(norm01(startTarget - angle) < requiredGap);
-      h.base = norm01(startTarget - speed*hazardTime);
+      const widthMult = isLearningRun ? 1 : Math.min(1.3, 1 + (depth-1)*0.025);
+      const w = h.width * widthMult;
+      const trailingBuffer = 0.15;
+      let lo = w + trailingBuffer;           // ship must be at least this far PAST the arc already
+      let hi = TAU - requiredForwardGap;      // arc must be at least this far AHEAD of the ship
+      if(hi <= lo) hi = lo + 0.1;             // defensive fallback, shouldn't trigger in practice
+      const rel = lo + Math.random()*(hi-lo);
+      h.angle = norm01(angle - rel);
     });
   }
 
@@ -464,7 +486,6 @@
     ripples = [];
     orb = newOrb();
     t = 0;
-    hazardTime = 0;
     depth = 1;
     difficulty = 1;
     grazedFlags = {};
@@ -477,8 +498,7 @@
     displayScore = 0;
     floatingTexts = [];
     lastComboTier = 0;
-    { const requiredGap = shipSpeedCur * invulnT + 0.3;
-      for(let i=0;i<rings.length;i++) placeSafeHazards(i, shipAngle, requiredGap); }
+    for(let i=0;i<rings.length;i++) placeSafeHazards(i, shipAngle, invulnT);
   }
 
   function spawnBurst(x, y, n, color, speed){
@@ -533,10 +553,11 @@
     bestDepth = Math.max(bestDepth, depth);
 
     const milestone = depth % 5 === 0;
+    const flashDuration = milestone ? 0.75 : 0.55;
     coreFlashT = 0; // set by triggerFlash below
     sfx.coreRise();
     triggerFlash({
-      duration: milestone ? 0.75 : 0.55,
+      duration: flashDuration,
       growDur: milestone ? 0.3 : 0.24,
       label: milestone ? `DEPTH ${depth} REACHED` : 'CORE REACHED',
       secondaryColorRgb: hexToRgb(hazardColor()),
@@ -549,12 +570,14 @@
       droneGain.gain.linearRampToValueAtTime(Math.min(0.09, 0.055 + depth*0.003), actx.currentTime + 0.4);
     }
 
-    // reshuffle hazards for the new descent (hidden behind the screen-filling glow)
-    rings.forEach(r => r.hazards.forEach(h => { h.base = Math.random()*TAU; }));
+    // hazards for the new descent get repositioned (safely) by placeSafeHazards below,
+    // hidden behind the screen-filling glow. The shield is kept alive slightly
+    // LONGER than the flash itself — collision danger must never resume while
+    // the screen is still visually covered by the celebration effect, or the
+    // "reaction window" is real on paper but invisible to the player.
     ringIndex = rings.length - 1;
-    invulnT = 0.5;
-    { const requiredGap = shipSpeedCur * invulnT + 0.3;
-      for(let i=0;i<rings.length;i++) placeSafeHazards(i, shipAngle, requiredGap); }
+    invulnT = flashDuration + 0.15;
+    for(let i=0;i<rings.length;i++) placeSafeHazards(i, shipAngle, invulnT);
     orb = newOrb();
   }
 
@@ -608,7 +631,7 @@
       shipRadius = rings[ringIndex].radius;
 
       if(invulnT > 0) invulnT = Math.max(0, invulnT - dt);
-      if(invulnT <= 0) hazardTime += dt;
+      if(invulnT <= 0) advanceHazards(dt);
 
       score += dt * 2.2 * multiplier;
       multiplier += (1 - multiplier) * dt * 0.18;
