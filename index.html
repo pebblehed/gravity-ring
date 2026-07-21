@@ -1247,6 +1247,7 @@
     ctx.restore();
 
     // screen-filling glow (grow, peak, fade) — shared by orb pickup and core reach
+    let flashAlphaNow = 0;
     if(coreFillT > 0){
       const elapsed = coreFillMax - coreFillT;
       const growDur = flashGrowDur;
@@ -1262,12 +1263,79 @@
         radius = maxR;
         alpha = (1-p) * peakAlpha;
       }
+      flashAlphaNow = alpha;
       const g3 = ctx.createRadialGradient(cx,cy,0, cx,cy, radius);
       g3.addColorStop(0, `rgba(255,243,214,${alpha})`);
       g3.addColorStop(0.55, `rgba(243,199,125,${alpha*0.85})`);
       g3.addColorStop(1, `rgba(243,199,125,0)`);
       ctx.fillStyle = g3;
       ctx.fillRect(0,0,LW,LH);
+    }
+
+    // X-ray silhouettes: punched through the glare so the ship and hazards
+    // never actually disappear during the blind-white moment. Two passes:
+    // 'difference' guarantees the shape reads against ANY brightness underneath
+    // (a white shape inverts whatever color it sits on, so it can't wash out
+    // the way a normal fill would at high glow alpha); 'lighter' on top adds a
+    // vivid, saturated glow so the cut-through shapes pop rather than reading
+    // as flat gray silhouettes. Only bothers drawing once the glow is bright
+    // enough to actually need it.
+    if(flashAlphaNow > 0.2){
+      const xrayStrength = Math.min(1, (flashAlphaNow - 0.2) / 0.5);
+      const hCol = hazardColor();
+      const hRgb = hexToRgb(hCol);
+      const flicker = 0.85 + 0.15*Math.sin(t*26);
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'difference';
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = '#ffffff';
+      rings.forEach(ring=>{
+        ring.hazards.forEach(hz=>{
+          const { start, width } = hazardState(ring, hz);
+          ctx.lineWidth = 15;
+          ctx.beginPath();
+          ctx.arc(cx,cy,ring.radius,start,start+width);
+          ctx.stroke();
+        });
+      });
+      if(state !== 'title'){
+        const sx = cx + shipRadius*Math.cos(shipAngle);
+        const sy = cy + shipRadius*Math.sin(shipAngle);
+        ctx.beginPath();
+        ctx.arc(sx, sy, 15, 0, TAU);
+        ctx.fill();
+      }
+      ctx.restore();
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = xrayStrength * flicker;
+      rings.forEach(ring=>{
+        ring.hazards.forEach(hz=>{
+          const { start, width } = hazardState(ring, hz);
+          ctx.lineWidth = 6;
+          ctx.strokeStyle = `rgba(${hRgb},0.95)`;
+          ctx.shadowColor = hCol;
+          ctx.shadowBlur = 22;
+          ctx.beginPath();
+          ctx.arc(cx,cy,ring.radius,start,start+width);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        });
+      });
+      if(state !== 'title'){
+        const sx = cx + shipRadius*Math.cos(shipAngle);
+        const sy = cy + shipRadius*Math.sin(shipAngle);
+        ctx.beginPath();
+        ctx.arc(sx, sy, 9, 0, TAU);
+        ctx.fillStyle = '#eaf6ff';
+        ctx.shadowColor = '#eaf6ff';
+        ctx.shadowBlur = 24;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+      ctx.restore();
     }
 
     // floating combo callouts ("NICE", "GREAT", ...)
