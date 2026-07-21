@@ -1,0 +1,1607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>GRAVITY RING</title>
+<style>
+  :root{
+    --void:#05060d;
+    --void2:#0a0d1c;
+    --star:#f3c77d;
+    --starcore:#fff3d6;
+    --ring:#2b3a63;
+    --ship:#eaf6ff;
+    --hazard:#ff3d63;
+    --orb:#ffd76a;
+    --ok:#6fe3c9;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none;}
+  html,body{
+    margin:0; height:100%; background:var(--void);
+    font-family:'Courier New', ui-monospace, monospace;
+    overflow:hidden; touch-action:manipulation;
+  }
+  #stage{
+    position:fixed; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(ellipse at 50% 30%, var(--void2) 0%, var(--void) 70%);
+  }
+  #frame{
+    position:relative;
+    width:min(100vw, 56vh);
+    height:min(178vw, 100vh);
+    max-width:480px; max-height:800px;
+  }
+  canvas{
+    width:100%; height:100%; display:block;
+    border-radius:2px;
+  }
+  .hud{
+    position:absolute; top:0; left:0; right:0;
+    padding:18px 20px 0 20px;
+    display:flex; justify-content:space-between; align-items:flex-start;
+    pointer-events:none;
+    letter-spacing:1px;
+  }
+  .hud .label{
+    font-size:10px; color:#5c6a94; margin-bottom:2px;
+  }
+  .hud .score{
+    font-size:26px; color:var(--ship); font-weight:bold;
+    text-shadow:0 0 12px rgba(234,246,255,0.35);
+  }
+  .hud .right{ text-align:right; }
+  .hud .depth{
+    font-size:20px; color:var(--star);
+    text-shadow:0 0 10px rgba(243,199,125,0.45);
+  }
+  .hud .mult{ font-size:12px; color:var(--ok); margin-top:2px; transition:transform 0.15s ease; }
+  .hud .mult.bump{ transform:scale(1.55); }
+  .hint{
+    position:absolute; left:0; right:0; top:44%;
+    text-align:center; color:#9fb0e0; font-size:12.5px;
+    letter-spacing:1.5px; pointer-events:none;
+    transition:opacity 0.6s ease;
+    text-shadow:0 0 10px rgba(159,176,224,0.5);
+    padding:0 30px;
+    opacity:0;
+  }
+  .overlay{
+    position:absolute; inset:0;
+    background:rgba(5,6,13,0.86);
+    display:flex; align-items:center; justify-content:center;
+    flex-direction:column;
+    opacity:0; pointer-events:none;
+    transition:opacity 0.35s ease;
+  }
+  .overlay.show{ opacity:1; pointer-events:auto; }
+  .overlay h1{
+    color:var(--hazard); font-size:20px; letter-spacing:3px;
+    margin:0 0 6px 0; text-shadow:0 0 18px rgba(255,61,99,0.6);
+    text-align:center;
+  }
+  .overlay .finalscore{
+    color:var(--ship); font-size:44px; font-weight:bold; margin:10px 0 2px 0;
+    text-shadow:0 0 16px rgba(234,246,255,0.4);
+  }
+  .overlay .best{
+    color:#8b98c4; font-size:12px; letter-spacing:1px; margin-bottom:26px;
+    text-align:center;
+  }
+  .overlay .best b{ color:var(--orb); }
+  .retrybtn{
+    background:transparent; border:1px solid var(--ok); color:var(--ok);
+    font-family:inherit; letter-spacing:2px; font-size:13px;
+    padding:12px 26px; border-radius:30px; cursor:pointer;
+    text-shadow:0 0 8px rgba(111,227,201,0.5);
+    box-shadow:0 0 14px rgba(111,227,201,0.15) inset;
+  }
+  .retrybtn:active{ transform:scale(0.96); }
+  .title{
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:6px;
+    background:radial-gradient(ellipse at 50% 40%, rgba(30,20,10,0.2), transparent 60%);
+    transition:opacity 0.5s ease;
+  }
+  .title h1{
+    color:var(--star); font-size:28px; letter-spacing:6px; margin:0;
+    text-shadow:0 0 24px rgba(243,199,125,0.55);
+  }
+  .title p{
+    color:#8b98c4; font-size:11.5px; letter-spacing:1.5px; margin:0 0 30px 0;
+    text-align:center; padding:0 40px;
+  }
+  .title .tap{
+    color:#eaf6ff; font-size:13px; letter-spacing:2px;
+    animation:pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse{ 0%,100%{opacity:0.35;} 50%{opacity:1;} }
+
+  .controls{
+    position:absolute; left:0; right:0; bottom:22px;
+    display:flex; justify-content:space-between;
+    padding:0 24px;
+    pointer-events:none;
+  }
+  .ctrlBtn{
+    pointer-events:auto;
+    width:84px; height:84px; border-radius:50%;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:rgba(20,26,48,0.55);
+    border:1.5px solid rgba(111,227,201,0.35);
+    backdrop-filter:blur(3px);
+    color:#eaf6ff;
+    font-family:inherit;
+    box-shadow:0 0 20px rgba(0,0,0,0.35);
+    transition:transform 0.08s ease, background 0.15s ease, border-color 0.15s ease;
+  }
+  .ctrlBtn .arrow{ font-size:22px; line-height:1; margin-bottom:3px; }
+  .ctrlBtn .lbl{ font-size:10px; letter-spacing:2px; color:#9fb0e0; }
+  .ctrlBtn:active, .ctrlBtn.pressed{
+    transform:scale(0.9);
+    background:rgba(111,227,201,0.18);
+    border-color:var(--ok);
+  }
+  #outBtn .arrow{ color:var(--star); }
+  #inBtn .arrow{ color:var(--ok); }
+
+  .practice{
+    position:absolute; left:0; right:0; top:82px;
+    text-align:center; pointer-events:none;
+    font-size:10.5px; letter-spacing:2px; color:var(--star);
+    text-shadow:0 0 8px rgba(243,199,125,0.5);
+    opacity:0; transition:opacity 0.4s ease;
+  }
+  .practice.show{ opacity:1; }
+
+  .feedbackOverlay{
+    position:absolute; inset:0;
+    background:rgba(5,6,13,0.94);
+    display:flex; align-items:center; justify-content:center;
+    opacity:0; pointer-events:none;
+    transition:opacity 0.3s ease;
+    z-index:5;
+  }
+  .feedbackOverlay.show{ opacity:1; pointer-events:auto; }
+  .feedbackCard{
+    position:relative;
+    width:min(86%, 340px);
+    display:flex; flex-direction:column; align-items:center;
+    padding:26px 20px 22px 20px;
+  }
+  .fbSkipLink{
+    position:absolute; top:-8px; right:2px;
+    background:transparent; border:none; color:#5c6a94;
+    font-family:inherit; font-size:10px; letter-spacing:1.5px;
+    padding:8px; cursor:pointer;
+  }
+  .dotsRow{ display:flex; gap:6px; margin-bottom:20px; }
+  .dotsRow .dot{
+    width:6px; height:6px; border-radius:50%;
+    background:rgba(159,176,224,0.25);
+    transition:background 0.2s ease, transform 0.2s ease;
+  }
+  .dotsRow .dot.done{ background:var(--ok); }
+  .dotsRow .dot.current{ background:#eaf6ff; transform:scale(1.3); }
+
+  .fbStep{
+    width:100%; display:flex; flex-direction:column; align-items:center;
+    animation:fbIn 0.22s ease;
+  }
+  @keyframes fbIn{ from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:translateY(0); } }
+  .fbStep h2{
+    color:var(--ship); font-size:13.5px; letter-spacing:1px;
+    margin:0 0 16px 0; text-align:center; line-height:1.5;
+  }
+  .tapOption{
+    width:100%; text-align:left;
+    background:rgba(20,26,48,0.55);
+    border:1.5px solid rgba(159,176,224,0.25);
+    border-radius:14px; color:var(--ship);
+    font-family:inherit; font-size:12.5px; letter-spacing:0.3px;
+    padding:12px 14px; margin-bottom:8px;
+    transition:transform 0.08s ease, background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  }
+  .tapOption:active{ transform:scale(0.97); }
+  .tapOption.picked{ background:rgba(111,227,201,0.16); border-color:var(--ok); color:var(--ok); }
+  .tapOption.picked[data-tone="neg"]{ background:rgba(255,61,99,0.14); border-color:var(--hazard); color:#ff8fa3; }
+  .tapOption.picked[data-tone="best"]{ background:rgba(243,199,125,0.16); border-color:var(--star); color:var(--star); }
+
+  .fbStep textarea{
+    width:100%; min-height:58px; resize:none;
+    background:rgba(20,26,48,0.55);
+    border:1.5px solid rgba(111,227,201,0.25);
+    border-radius:10px; color:var(--ship);
+    font-family:inherit; font-size:12px; padding:10px;
+    margin-bottom:12px;
+  }
+  .fbStep textarea::placeholder{ color:#5c6a94; }
+  .fbEmailLabel{
+    color:var(--star); font-size:10.5px; letter-spacing:0.3px;
+    line-height:1.4; text-align:center; margin:-2px 0 8px 0;
+    text-shadow:0 0 8px rgba(243,199,125,0.3);
+  }
+  .fbStep input[type="email"]{
+    width:100%; background:rgba(20,26,48,0.55);
+    border:1.5px solid rgba(243,199,125,0.3);
+    border-radius:20px; color:var(--ship);
+    font-family:inherit; font-size:12px; padding:10px 14px;
+    margin-bottom:14px;
+  }
+  .fbStep input[type="email"]::placeholder{ color:#5c6a94; }
+  .fbStep input[type="email"]:focus{ border-color:var(--star); outline:none; }
+  .fbBtn{
+    width:100%; font-family:inherit; letter-spacing:1.5px; font-size:11px;
+    padding:11px 0; border-radius:24px; cursor:pointer;
+    background:transparent; border:1px solid var(--ok); color:var(--ok);
+    text-shadow:0 0 8px rgba(111,227,201,0.5);
+    margin-top:4px;
+  }
+  .fbBtn:disabled{ opacity:0.4; }
+  .feedbackThanks{
+    color:var(--ok); font-size:12px; letter-spacing:1px; text-align:center;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="frame">
+    <canvas id="c"></canvas>
+
+    <div class="hud">
+      <div>
+        <div class="label">SCORE</div>
+        <div class="score" id="scoreEl">0</div>
+      </div>
+      <div class="right">
+        <div class="label">DEPTH</div>
+        <div class="depth" id="depthEl">1</div>
+        <div class="mult" id="multEl">x1.0</div>
+      </div>
+    </div>
+
+    <div class="hint" id="hintEl">IN dives toward the star &middot; OUT retreats &middot; reach the core to descend deeper</div>
+    <div class="practice" id="practiceEl"></div>
+
+    <div class="title" id="titleEl">
+      <h1>GRAVITY RING</h1>
+      <p>dive through the rings, dodge the storm arcs,<br>reach the core &mdash; then do it again, deeper</p>
+      <div class="tap">TAP ANYWHERE TO BEGIN</div>
+    </div>
+
+    <div class="overlay" id="overEl">
+      <h1>DRIFTED INTO THE STORM</h1>
+      <div class="finalscore" id="finalScoreEl">0</div>
+      <div class="best">BEST SCORE&nbsp; <b id="bestEl">0</b> &middot; DEEPEST DIVE&nbsp; <b id="bestDepthEl">1</b></div>
+      <button class="retrybtn" id="retryBtn">TAP TO RETRY</button>
+    </div>
+
+    <div class="feedbackOverlay" id="feedbackEl">
+      <div class="feedbackCard" id="feedbackCard">
+        <button class="fbSkipLink" id="fbSkipLink">skip</button>
+        <div class="dotsRow" id="dotsRow"></div>
+        <div id="feedbackStepHost"></div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="ctrlBtn" id="inBtn">
+        <div class="arrow">&#9660;</div>
+        <div class="lbl">IN</div>
+      </button>
+      <button class="ctrlBtn" id="outBtn">
+        <div class="arrow">&#9650;</div>
+        <div class="lbl">OUT</div>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const frame = document.getElementById('frame');
+  const scoreEl = document.getElementById('scoreEl');
+  const depthEl = document.getElementById('depthEl');
+  const multEl = document.getElementById('multEl');
+  const hintEl = document.getElementById('hintEl');
+  const practiceEl = document.getElementById('practiceEl');
+  const titleEl = document.getElementById('titleEl');
+  const overEl = document.getElementById('overEl');
+  const finalScoreEl = document.getElementById('finalScoreEl');
+  const bestEl = document.getElementById('bestEl');
+  const bestDepthEl = document.getElementById('bestDepthEl');
+  const retryBtn = document.getElementById('retryBtn');
+  const inBtn = document.getElementById('inBtn');
+  const outBtn = document.getElementById('outBtn');
+  const feedbackEl = document.getElementById('feedbackEl');
+  const feedbackCard = document.getElementById('feedbackCard');
+  const dotsRow = document.getElementById('dotsRow');
+  const feedbackStepHost = document.getElementById('feedbackStepHost');
+  const fbSkipLink = document.getElementById('fbSkipLink');
+
+  // ================= FEEDBACK QUESTIONNAIRE =================
+  // Fires once ever (persisted via localStorage -- this is a real deployed
+  // site, not the artifact preview sandbox, so localStorage is fine here),
+  // at whichever comes first: reaching the depth-5 milestone, or finishing
+  // a 4th run (right after practice mode ends).
+  // Replace with your own Formspree endpoint (formspree.io -> new form -> copy the URL).
+  const FORMSPREE_ENDPOINT = 'https://formspree.io/f/mwvgqepv';
+  const FEEDBACK_DEPTH_TRIGGER = 5;
+  const FEEDBACK_RUN_TRIGGER = 4;
+  const FEEDBACK_DONE_KEY = 'gravityring_feedback_done';
+
+  function feedbackAlreadyDone(){
+    try{ return localStorage.getItem(FEEDBACK_DONE_KEY) === '1'; }
+    catch(e){ return false; } // storage unavailable (e.g. sandboxed preview) -> fall back to session-only behavior
+  }
+  function markFeedbackDone(){
+    try{ localStorage.setItem(FEEDBACK_DONE_KEY, '1'); }catch(e){}
+  }
+
+  let feedbackEverShown = feedbackAlreadyDone();
+  const feedbackAnswers = {};
+
+  // Each tap option can carry a `tone` for semantic coloring when picked:
+  // 'pos' (teal, default), 'neg' (rose), 'best' (gold), 'neutral' (muted, no color change).
+  const FEEDBACK_STEPS = [
+    { type:'tap', key:'keepPlaying', q:'Want to keep playing?', opts:[
+      {v:'not_really', l:'Not really', tone:'neg'},
+      {v:'meh', l:'Meh', tone:'neutral'},
+      {v:'yeah', l:'Yeah', tone:'pos'},
+      {v:'cant_stop', l:"Can't stop", tone:'best'}
+    ]},
+    { type:'tap', key:'fairness', q:'When you died, did it feel fair?', opts:[
+      {v:'fair', l:'Yes, fair', tone:'pos'},
+      {v:'not_sure', l:'Not sure', tone:'neutral'},
+      {v:'unfair', l:'Felt cheap / unfair', tone:'neg'}
+    ]},
+    { type:'tap', key:'difficulty', q:'Was the difficulty ramp right?', opts:[
+      {v:'too_easy', l:'Too easy', tone:'neutral'},
+      {v:'just_right', l:'Just right', tone:'pos'},
+      {v:'too_hard', l:'Too hard', tone:'neg'}
+    ]},
+    { type:'tap', key:'lookFeel', q:'How\u2019s the look and feel \u2014 visuals + sound?', opts:[
+      {v:'not_for_me', l:'Not for me', tone:'neg'},
+      {v:'fine', l:'Fine', tone:'neutral'},
+      {v:'love_it', l:'Love it', tone:'best'}
+    ]},
+    { type:'text', key:'comment', q:'Anything specific feel broken, confusing, or unfair?', placeholder:'optional', email:true },
+    { type:'finalText', keys:['change','wish'],
+      qs:['One thing you\u2019d change?', 'One thing you\u2019d like to see added?'],
+      placeholders:['optional', 'optional'] }
+  ];
+
+  let fbStepIndex = 0;
+
+  function renderDots(){
+    dotsRow.innerHTML = '';
+    FEEDBACK_STEPS.forEach((s,i)=>{
+      const d = document.createElement('div');
+      d.className = 'dot' + (i < fbStepIndex ? ' done' : '') + (i === fbStepIndex ? ' current' : '');
+      dotsRow.appendChild(d);
+    });
+  }
+
+  function renderStep(){
+    renderDots();
+    const step = FEEDBACK_STEPS[fbStepIndex];
+    const wrap = document.createElement('div');
+    wrap.className = 'fbStep';
+
+    if(step.type === 'tap'){
+      const h = document.createElement('h2'); h.textContent = step.q; wrap.appendChild(h);
+      step.opts.forEach(opt=>{
+        const btn = document.createElement('button');
+        btn.className = 'tapOption';
+        btn.dataset.tone = opt.tone;
+        btn.textContent = opt.l;
+        btn.addEventListener('pointerdown', (e)=>{
+          e.stopPropagation();
+          feedbackAnswers[step.key] = opt.v;
+          btn.classList.add('picked');
+          wrap.querySelectorAll('.tapOption').forEach(b=>{ if(b!==btn) b.disabled = true; });
+          setTimeout(advanceStep, 260);
+        });
+        wrap.appendChild(btn);
+      });
+    } else if(step.type === 'text'){
+      const h = document.createElement('h2'); h.textContent = step.q; wrap.appendChild(h);
+      const ta = document.createElement('textarea');
+      ta.placeholder = step.placeholder || '';
+      wrap.appendChild(ta);
+      let emailInput = null;
+      if(step.email){
+        const label = document.createElement('div');
+        label.className = 'fbEmailLabel';
+        label.textContent = 'Want to help defy gravity and shape what\u2019s next? Drop your email and we\u2019ll follow up.';
+        wrap.appendChild(label);
+        emailInput = document.createElement('input');
+        emailInput.type = 'email';
+        emailInput.placeholder = 'you@example.com (optional)';
+        wrap.appendChild(emailInput);
+      }
+      const next = document.createElement('button');
+      next.className = 'fbBtn'; next.textContent = 'NEXT';
+      next.addEventListener('pointerdown', (e)=>{
+        e.stopPropagation();
+        feedbackAnswers[step.key] = ta.value.slice(0, 1000);
+        if(emailInput) feedbackAnswers.email = emailInput.value.trim().slice(0, 200);
+        advanceStep();
+      });
+      wrap.appendChild(next);
+    } else if(step.type === 'finalText'){
+      const tas = [];
+      step.qs.forEach((q, i)=>{
+        const h = document.createElement('h2'); h.textContent = q; h.style.marginBottom = '10px';
+        if(i>0) h.style.marginTop = '4px';
+        wrap.appendChild(h);
+        const ta = document.createElement('textarea');
+        ta.placeholder = step.placeholders[i] || '';
+        ta.style.minHeight = '44px';
+        wrap.appendChild(ta);
+        tas.push(ta);
+      });
+      const send = document.createElement('button');
+      send.className = 'fbBtn'; send.textContent = 'SEND';
+      send.addEventListener('pointerdown', (e)=>{
+        e.stopPropagation();
+        step.keys.forEach((k,i)=>{ feedbackAnswers[k] = tas[i].value.slice(0, 1000); });
+        submitFeedback(send);
+      });
+      wrap.appendChild(send);
+    }
+
+    feedbackStepHost.innerHTML = '';
+    feedbackStepHost.appendChild(wrap);
+  }
+
+  function advanceStep(){
+    fbStepIndex++;
+    if(fbStepIndex >= FEEDBACK_STEPS.length){ return; }
+    renderStep();
+  }
+
+  function closeFeedback(){
+    feedbackEl.classList.remove('show');
+  }
+
+  function showFeedback(){
+    fbStepIndex = 0;
+    for(const k in feedbackAnswers) delete feedbackAnswers[k];
+    renderStep();
+    feedbackEl.classList.add('show');
+  }
+
+  fbSkipLink.addEventListener('pointerdown', (e)=>{
+    e.stopPropagation();
+    markFeedbackDone();
+    closeFeedback();
+  });
+
+  function submitFeedback(sendBtn){
+    sendBtn.disabled = true;
+    sendBtn.textContent = 'SENDING...';
+
+    const fd = new FormData();
+    Object.keys(feedbackAnswers).forEach(k => fd.append(k, feedbackAnswers[k]));
+    fd.append('score', Math.round(score));
+    fd.append('bestDepth', bestDepth);
+    fd.append('totalRuns', totalRuns);
+
+    fetch(FORMSPREE_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Accept': 'application/json' },
+      body: fd
+    }).then(res=>{
+      markFeedbackDone();
+      if(res.ok){
+        feedbackStepHost.innerHTML = '<div class="feedbackThanks">THANKS &mdash; THAT HELPS</div>';
+        dotsRow.querySelectorAll('.dot').forEach(d=>{ d.classList.add('done'); d.classList.remove('current'); });
+        setTimeout(closeFeedback, 1300);
+      } else {
+        sendBtn.disabled = false;
+        sendBtn.textContent = 'SEND';
+      }
+    }).catch(()=>{
+      markFeedbackDone(); // don't keep re-prompting on repeat network failures
+      feedbackStepHost.innerHTML = '<div class="feedbackThanks">THANKS &mdash; THAT HELPS</div>';
+      setTimeout(closeFeedback, 1300);
+    });
+  }
+
+  const LW = 480, LH = 800;
+  let cx = LW/2, cy = 400;
+
+  function resize(){
+    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    const rect = frame.getBoundingClientRect();
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    ctx.setTransform(dpr * (rect.width/LW), 0, 0, dpr * (rect.height/LH), 0, 0);
+  }
+  window.addEventListener('resize', resize);
+
+  // ================= AUDIO =================
+  // Master bus with a lightweight delay-based "reverb" send so every sound
+  // has a bit of air/space (the ASMR feel), plus a continuous deep drone.
+  let actx = null, masterGain, dryGain, reverbDelay, reverbFilter, reverbFeedback, reverbWet;
+  let droneStarted = false, droneGain, shimmerGain;
+
+  function ensureAudio(){
+    if(actx) return;
+    try{
+      actx = new (window.AudioContext||window.webkitAudioContext)();
+      masterGain = actx.createGain(); masterGain.gain.value = 0.9; masterGain.connect(actx.destination);
+      dryGain = actx.createGain(); dryGain.gain.value = 1; dryGain.connect(masterGain);
+
+      reverbDelay = actx.createDelay(1.2); reverbDelay.delayTime.value = 0.24;
+      reverbFilter = actx.createBiquadFilter(); reverbFilter.type = 'lowpass'; reverbFilter.frequency.value = 1600;
+      reverbFeedback = actx.createGain(); reverbFeedback.gain.value = 0.34;
+      reverbWet = actx.createGain(); reverbWet.gain.value = 0.55;
+      reverbDelay.connect(reverbFilter);
+      reverbFilter.connect(reverbFeedback);
+      reverbFeedback.connect(reverbDelay);
+      reverbDelay.connect(reverbWet);
+      reverbWet.connect(masterGain);
+    }catch(e){}
+  }
+
+  function beep(freq, dur, type, gain, delay){
+    if(!actx) return;
+    const t0 = actx.currentTime + (delay||0);
+    const o = actx.createOscillator();
+    const g = actx.createGain();
+    o.type = type || 'sine';
+    o.frequency.setValueAtTime(freq, t0);
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(gain||0.12, t0+0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+    o.connect(g);
+    g.connect(dryGain);
+    g.connect(reverbDelay);
+    o.start(t0); o.stop(t0+dur+0.02);
+  }
+
+  function makeNoiseBuffer(dur){
+    const sr = actx.sampleRate;
+    const buf = actx.createBuffer(1, Math.max(1, Math.floor(sr*dur)), sr);
+    const data = buf.getChannelData(0);
+    for(let i=0;i<data.length;i++){ data[i] = (Math.random()*2-1) * Math.pow(1-i/data.length, 1.4); }
+    return buf;
+  }
+  function noiseBurst(dur, gain, filterFreq, filterType){
+    if(!actx) return;
+    const buf = makeNoiseBuffer(dur);
+    const src = actx.createBufferSource(); src.buffer = buf;
+    const filt = actx.createBiquadFilter(); filt.type = filterType||'lowpass'; filt.frequency.value = filterFreq||800;
+    const g = actx.createGain(); g.gain.value = gain||0.2;
+    src.connect(filt); filt.connect(g); g.connect(dryGain); g.connect(reverbDelay);
+    src.start();
+  }
+
+  function startDrone(){
+    if(droneStarted || !actx) return;
+    droneStarted = true;
+
+    droneGain = actx.createGain(); droneGain.gain.value = 0;
+    droneGain.connect(masterGain);
+    droneGain.gain.linearRampToValueAtTime(0.055, actx.currentTime + 3.2);
+
+    const filt = actx.createBiquadFilter(); filt.type = 'lowpass'; filt.frequency.value = 210; filt.Q.value = 1.1;
+    filt.connect(droneGain);
+
+    const o1 = actx.createOscillator(); o1.type = 'sine'; o1.frequency.value = 46;
+    const o2 = actx.createOscillator(); o2.type = 'sine'; o2.frequency.value = 46*1.006;
+    const sub = actx.createOscillator(); sub.type = 'sine'; sub.frequency.value = 23;
+    o1.connect(filt); o2.connect(filt); sub.connect(filt);
+
+    const lfo = actx.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 0.05;
+    const lfoGain = actx.createGain(); lfoGain.gain.value = 65;
+    lfo.connect(lfoGain); lfoGain.connect(filt.frequency);
+
+    const lfo2 = actx.createOscillator(); lfo2.type = 'sine'; lfo2.frequency.value = 0.018;
+    const lfo2Gain = actx.createGain(); lfo2Gain.gain.value = 3;
+    lfo2.connect(lfo2Gain); lfo2Gain.connect(o2.detune);
+
+    [o1,o2,sub,lfo,lfo2].forEach(o=>o.start());
+
+    // shimmer layer: silent at baseline, brightens as the combo multiplier climbs
+    shimmerGain = actx.createGain(); shimmerGain.gain.value = 0;
+    shimmerGain.connect(masterGain);
+    const sh1 = actx.createOscillator(); sh1.type = 'sine'; sh1.frequency.value = 262;
+    const sh2 = actx.createOscillator(); sh2.type = 'sine'; sh2.frequency.value = 262*1.012;
+    const shFilt = actx.createBiquadFilter(); shFilt.type = 'bandpass'; shFilt.frequency.value = 700; shFilt.Q.value = 0.8;
+    sh1.connect(shFilt); sh2.connect(shFilt); shFilt.connect(shimmerGain);
+    [sh1,sh2].forEach(o=>o.start());
+  }
+
+  const sfx = {
+    move:()=>beep(480,0.08,'square',0.06),
+    blocked:()=>beep(220,0.09,'square',0.05),
+    graze:(m)=>beep(700+m*40,0.12,'sine',0.10),
+    orb:()=>{ beep(880,0.10,'triangle',0.11); beep(1175,0.11,'triangle',0.11,0.05); beep(1568,0.16,'triangle',0.12,0.10); },
+    coreRise:()=>{
+      if(!actx) return;
+      const t0 = actx.currentTime;
+      const o = actx.createOscillator(); o.type = 'sawtooth';
+      const g = actx.createGain();
+      const filt = actx.createBiquadFilter(); filt.type = 'bandpass'; filt.frequency.value = 600; filt.Q.value = 0.7;
+      o.frequency.setValueAtTime(140, t0);
+      o.frequency.exponentialRampToValueAtTime(900, t0+0.5);
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(0.09, t0+0.05);
+      g.gain.linearRampToValueAtTime(0.0001, t0+0.55);
+      o.connect(filt); filt.connect(g); g.connect(dryGain); g.connect(reverbDelay);
+      o.start(t0); o.stop(t0+0.6);
+    },
+    coreBoom:()=>{
+      noiseBurst(0.6, 0.22, 500, 'lowpass');
+      beep(70,0.6,'sine',0.2);
+      beep(46,0.7,'sine',0.16,0.03);
+    },
+    orbBoom:()=>{
+      noiseBurst(0.3, 0.14, 1400, 'bandpass');
+      beep(520,0.22,'sine',0.11);
+      beep(760,0.18,'triangle',0.1,0.05);
+    },
+    fork:(tier)=>{
+      if(!actx) return;
+      const t0 = actx.currentTime;
+      const buf = makeNoiseBuffer(0.32);
+      const src = actx.createBufferSource(); src.buffer = buf;
+      const filt = actx.createBiquadFilter(); filt.type = 'bandpass'; filt.Q.value = 7;
+      const baseFreq = 950 + tier*180;
+      filt.frequency.setValueAtTime(baseFreq*0.55, t0);
+      filt.frequency.exponentialRampToValueAtTime(baseFreq*1.9, t0+0.14);
+      filt.frequency.exponentialRampToValueAtTime(baseFreq*0.8, t0+0.32);
+      const g = actx.createGain();
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(0.17, t0+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0+0.32);
+      src.connect(filt); filt.connect(g); g.connect(dryGain); g.connect(reverbDelay);
+      src.start(t0);
+      beep(1200+tier*90, 0.05, 'square', 0.05, 0.02);
+      beep(1650+tier*70, 0.04, 'square', 0.04, 0.10);
+    },
+    death:()=>{ beep(160,0.5,'sawtooth',0.15); beep(90,0.6,'sawtooth',0.12); noiseBurst(0.4,0.14,900,'lowpass'); }
+  };
+
+  function primeAudio(){
+    ensureAudio();
+    if(actx && actx.state === 'suspended') actx.resume();
+    startDrone();
+  }
+
+  // ================= MATH HELPERS =================
+  const TAU = Math.PI*2;
+  function norm01(a){ a = a % TAU; if(a<0) a += TAU; return a; }
+  function normSigned(a){ a = a % TAU; if(a>Math.PI) a -= TAU; if(a<-Math.PI) a += TAU; return a; }
+  function easeOutCubic(p){ return 1 - Math.pow(1-p, 3); }
+
+  // ================= HAZARD COLOR PALETTE =================
+  // Obstacles change color with each descent, cycling through this palette.
+  const HAZARD_PALETTE = ['#ff3d63', '#c774ff', '#ff9d4d', '#4dd2ff', '#ff4de3', '#8fff6b'];
+  function hazardColor(forDepth){
+    const d = forDepth || depth;
+    return HAZARD_PALETTE[(d-1) % HAZARD_PALETTE.length];
+  }
+
+  // ================= RING / HAZARD CONFIG =================
+  // ringIndex 0 = innermost (closest to the star / the core), last index = outermost (starting edge)
+  function makeRings(){
+    return [
+      { radius:60,  baseSpeed: 0.55, hazards:[{angle:0.0, width:0.85}] },
+      { radius:100, baseSpeed:-0.70, hazards:[{angle:1.6, width:0.75}] },
+      { radius:140, baseSpeed: 0.85, hazards:[{angle:0.3, width:0.62},{angle:3.5, width:0.55}] },
+      { radius:180, baseSpeed:-0.95, hazards:[{angle:2.1, width:0.58},{angle:5.0, width:0.5}] },
+      { radius:220, baseSpeed: 1.15, hazards:[{angle:0.8, width:0.5},{angle:2.9, width:0.45},{angle:4.8, width:0.45}] },
+    ];
+  }
+
+  const GRAZE_THRESH = 0.14;
+  const ORB_THRESH = 0.09;
+  const SHIP_SPEED = 1.35;
+  // Invisible mastery ramp: new players start calm, then speed rises gently as
+  // they prove competence by reaching deeper cores. There is no abrupt switch
+  // from practice to full speed.
+  const START_SPEED_SCALE = 0.48;
+  const BASELINE_SPEED_SCALE = 1.0;
+  const MASTERED_DEPTH = 7;
+  const HAZARD_MASTERY_LEAD = 0.10;
+
+  // Orb-chain mastery mechanic: a second skill axis alongside core-diving.
+  // Grabbing consecutive orbs within ORB_CHAIN_WINDOW builds a chain; letting
+  // the window lapse resets it. Clusters (multiple orbs at once, spread
+  // across rings, on a shared expiry timer) are what actually make chaining
+  // a deliberate in/out dash rather than incidental collection.
+  const ORB_CHAIN_WINDOW = 2.4;      // seconds allowed between grabs to keep a chain alive
+  const CLUSTER_MIN = 3, CLUSTER_MAX = 5;
+  const CLUSTER_DURATION = 7;        // seconds a cluster stays available before unclaimed orbs vanish
+  const CHAIN_PALETTE = ['#4dfff0','#a64dff','#ff4de3','#ffe94d'];
+  function chainColor(tier){
+    return tier >= 3 ? CHAIN_PALETTE[(tier-3) % CHAIN_PALETTE.length] : '#ffd76a';
+  }
+
+  let rings, ringIndex, shipAngle, shipRadius;
+  let score, best = 0, bestDepth = 1, multiplier;
+  let particles, trail, ripples, forks;
+  let orbs;
+  let orbChainCount = 0, lastOrbPickupT = -Infinity, nextClusterEventT = 0;
+  let t, depth, difficulty;
+  let state;
+  let shakeT = 0;
+  let coreFlashT = 0;      // text fade timer
+  let coreFillT = 0, coreFillMax = 0.55, coreExploded = false; // screen-filling glow sequence
+  let flashGrowDur = 0.24, flashLabel = null, flashSecondaryRgb = '255,215,106', flashBig = true, flashMilestone = false;
+  let grazedFlags;
+  let totalRuns = 0;
+  let speedScale = START_SPEED_SCALE;
+  let shipSpeedCur = SHIP_SPEED * START_SPEED_SCALE;
+  let masteryPeakDepth = 1;
+  let invulnT = 0;
+  let timeScale = 1, timeScaleTarget = 1; // for cinematic slow-mo on death
+  let displayScore = 0; // lerped toward `score` for a smooth count-up
+  let floatingTexts = [];
+  let lastComboTier = 0;
+  const canVibrate = typeof navigator !== 'undefined' && !!navigator.vibrate;
+  function vibrate(pattern){ if(canVibrate){ try{ navigator.vibrate(pattern); }catch(e){} } }
+
+  const COMBO_WORDS = { 2:'NICE', 3:'GREAT', 4:'AWESOME', 5:'INCREDIBLE', 6:'UNREAL' };
+  function spawnFloatingText(text, color, x, y){
+    floatingTexts.push({ text, color, x, y, life:1.1, maxLife:1.1, vy:-42 });
+  }
+
+  function ringHazardKey(ri, hi){ return ri+'_'+hi; }
+
+  // Baseline: one orb, always present, exactly like before the chain mechanic existed.
+  function spawnSingleOrb(){
+    const ri = Math.floor(Math.random()*4);
+    orbs.push({ ring: ri, angle: Math.random()*TAU, phase: Math.random()*10 });
+  }
+
+  // Cluster: 3-5 orbs spread across distinct rings where possible, sharing one
+  // expiry timer -- this is the actual skill window the chain mechanic is built around.
+  function spawnOrbCluster(){
+    const n = CLUSTER_MIN + Math.floor(Math.random()*(CLUSTER_MAX-CLUSTER_MIN+1));
+    const expiresAt = t + CLUSTER_DURATION;
+    const usedRings = new Set();
+    for(let i=0;i<n;i++){
+      let ri, tries = 0;
+      do { ri = Math.floor(Math.random()*4); tries++; } while(usedRings.has(ri) && tries < 8);
+      usedRings.add(ri);
+      orbs.push({ ring: ri, angle: Math.random()*TAU, phase: Math.random()*10, expiresAt });
+    }
+  }
+
+  function spawnElectricForks(x, y, color, count){
+    for(let i=0;i<count;i++){
+      const ang = Math.random()*TAU;
+      const len = 46 + Math.random()*38;
+      const segs = 4;
+      const pts = [[x,y]];
+      for(let s=1;s<=segs;s++){
+        const frac = s/segs;
+        const bx = x + Math.cos(ang)*len*frac;
+        const by = y + Math.sin(ang)*len*frac;
+        const perp = ang + Math.PI/2;
+        const jitter = (Math.random()-0.5) * (14*(1-frac*0.6));
+        pts.push([bx + Math.cos(perp)*jitter, by + Math.sin(perp)*jitter]);
+      }
+      forks.push({ points: pts, life: 0.35+Math.random()*0.15, maxLife: 0.5, color });
+    }
+  }
+
+  // Handles scoring, chain bookkeeping, and the tiered payoff for a single orb grab.
+  function collectOrb(o){
+    if(t - lastOrbPickupT <= ORB_CHAIN_WINDOW){
+      orbChainCount++;
+    } else {
+      orbChainCount = 1;
+    }
+    lastOrbPickupT = t;
+
+    score += 25 * multiplier;
+    multiplier = Math.min(6, multiplier + 0.15);
+
+    const ox2 = cx + rings[o.ring].radius*Math.cos(o.angle);
+    const oy2 = cy + rings[o.ring].radius*Math.sin(o.angle);
+    const col = chainColor(orbChainCount);
+    const effectTier = Math.min(orbChainCount, 10); // caps audio pitch/scale math, not the displayed count
+
+    if(orbChainCount >= 4){
+      sfx.orb();
+      sfx.fork(effectTier);
+      spawnElectricForks(ox2, oy2, col, Math.min(10, 6 + (orbChainCount-4)));
+      spawnBurst(ox2, oy2, 20, hexToRgb(col), 120);
+      spawnFloatingText('CHAIN x'+orbChainCount, col, ox2, oy2-30);
+      triggerFlash({ duration:0.4, growDur:0.14, label:null, secondaryColorRgb: hexToRgb(col), big:false });
+      vibrate([15,20,15,20,25]);
+    } else if(orbChainCount >= 3){
+      sfx.orb();
+      spawnBurst(ox2, oy2, 18, hexToRgb(col), 105);
+      spawnFloatingText('CHAIN x'+orbChainCount, col, ox2, oy2-28);
+      triggerFlash({ duration:0.4, growDur:0.16, label:null, secondaryColorRgb: hexToRgb(col), big:false });
+    } else {
+      sfx.orb();
+      spawnBurst(ox2, oy2, 16, '255,215,106', 100);
+      triggerFlash({ duration:0.4, growDur:0.16, label:null, secondaryColorRgb:'255,215,106', big:false });
+    }
+  }
+
+  function hazardState(ring, hz){
+    const widthMult = Math.min(1.3, 1 + Math.max(0, depth-2)*0.025);
+    return { start: hz.angle, width: hz.width * widthMult };
+  }
+
+  // The only place hazard angles change. Runs once per unshielded frame and
+  // nudges each hazard forward by a small increment — no formula involving
+  // elapsed time, so there's nothing that can drift or amplify over a long
+  // session. On shielded frames this simply isn't called: hazards are
+  // genuinely frozen, not just "slowed."
+  function advanceHazards(dt){
+    rings.forEach(ring => {
+      const speed = ring.baseSpeed * difficulty * speedScale;
+      ring.hazards.forEach(hz => { hz.angle = norm01(hz.angle + speed*dt); });
+    });
+  }
+
+  // Re-bases a ring's hazards so the ship has a genuine reaction window once
+  // everything unfreezes together. IMPORTANT: a hazard is an ARC with real
+  // width, not a point. Checking only "is the arc's start far enough ahead"
+  // isn't sufficient — a random angle can land just BEHIND the ship, close
+  // enough that the ship is already sitting inside (or just past) that arc,
+  // which a one-sided check wouldn't catch. So we pick the ship-relative
+  // offset directly within the one true safe range: far enough past the
+  // trailing edge of the previous wrap, and far enough before the arc
+  // reaches the ship again. Since the ship is frozen for the whole shield
+  // (see update()), there's no need to account for its own travel here —
+  // only for how fast the gap closes once both start moving again.
+  // Hazards on the same ring all share that ring's rotation speed, so their
+  // relative spacing never changes once placed — meaning it's enough to
+  // prevent overlap here, at placement time, and they'll stay separated forever.
+  const REACTION_TIME = 0.45; // desired seconds of real dodge-room after everything unfreezes
+  const OBSTACLE_GAP = 0.12;  // minimum clear space kept between two hazards on the same ring
+  function arcsOverlap(a1, w1, a2, w2, gap){
+    const d1 = norm01(a2 - a1);
+    const d2 = norm01(a1 - a2);
+    return d1 < w1 + gap || d2 < w2 + gap;
+  }
+  function placeSafeHazards(ringIdx, angle){
+    const ring = rings[ringIdx];
+    const ringSpeedSigned = ring.baseSpeed * difficulty * speedScale;
+    // Two distinct dangers once everything unfreezes:
+    //  - a hazard AHEAD closes in if it's moving toward the ship (opposite direction)
+    //  - a hazard BEHIND can catch up from behind if it's moving the SAME direction
+    //    as the ship but FASTER (this happens on the spawn ring at higher difficulty,
+    //    since its rotation speed scales past the ship's fixed speed)
+    const forwardClosingRate  = shipSpeedCur + Math.max(0, -ringSpeedSigned);
+    const trailingClosingRate = Math.max(0, ringSpeedSigned - shipSpeedCur);
+    const requiredForwardGap  = forwardClosingRate*REACTION_TIME + 0.15;
+    const requiredTrailingGap = trailingClosingRate*REACTION_TIME + 0.15;
+    const widthMult = Math.min(1.3, 1 + Math.max(0, depth-2)*0.025);
+    const placed = []; // hazards already placed on this ring during this call
+    ring.hazards.forEach(h => {
+      const w = h.width * widthMult;
+      let lo = w + requiredTrailingGap;      // ship must be at least this far PAST the arc already
+      let hi = TAU - requiredForwardGap;      // arc must be at least this far AHEAD of the ship
+      if(hi <= lo) hi = lo + 0.1;             // defensive fallback, shouldn't trigger in practice
+
+      let candidateAngle, tries = 0;
+      do {
+        const rel = lo + Math.random()*(hi-lo);
+        candidateAngle = norm01(angle - rel);
+        tries++;
+      } while(tries < 60 && placed.some(p => arcsOverlap(candidateAngle, w, p.angle, p.width, OBSTACLE_GAP)));
+
+      h.angle = candidateAngle;
+      placed.push({ angle: candidateAngle, width: w });
+    });
+  }
+
+  function clamp01(v){ return Math.max(0, Math.min(1, v)); }
+
+  function smoothstep01(v){
+    const p = clamp01(v);
+    return p*p*(3 - 2*p);
+  }
+
+  // Mastery is driven by the deepest core the player has demonstrated they can
+  // reach, not by how many times they have died. A struggling player therefore
+  // never gets punished simply for having played several attempts.
+  function masteryProgress(){
+    const depthProgress = clamp01((masteryPeakDepth - 1) / (MASTERED_DEPTH - 1));
+    return smoothstep01(depthProgress);
+  }
+
+  function updateMasterySpeeds(){
+    const p = masteryProgress();
+    const shipScale = START_SPEED_SCALE + (BASELINE_SPEED_SCALE - START_SPEED_SCALE) * p;
+    const hazardTarget = Math.min(
+      BASELINE_SPEED_SCALE + HAZARD_MASTERY_LEAD,
+      shipScale + HAZARD_MASTERY_LEAD * p
+    );
+    shipSpeedCur = SHIP_SPEED * shipScale;
+    speedScale = hazardTarget;
+  }
+
+  function resetGame(){
+    rings = makeRings();
+    ringIndex = rings.length - 1;
+    shipAngle = -Math.PI/2;
+    score = 0;
+    multiplier = 1;
+    particles = [];
+    trail = [];
+    ripples = [];
+    forks = [];
+    orbs = [];
+    t = 0;
+    spawnSingleOrb();
+    nextClusterEventT = t + 18 + Math.random()*14;
+    orbChainCount = 0;
+    lastOrbPickupT = -Infinity;
+    depth = 1;
+    difficulty = 1;
+    grazedFlags = {};
+    shakeT = 0;
+    coreFlashT = 0;
+    coreFillT = 0;
+    coreExploded = false;
+    invulnT = 0.6;
+    timeScale = 1; timeScaleTarget = 1;
+    displayScore = 0;
+    floatingTexts = [];
+    lastComboTier = 0;
+    updateMasterySpeeds();
+    for(let i=0;i<rings.length;i++) placeSafeHazards(i, shipAngle);
+  }
+
+  function spawnBurst(x, y, n, color, speed){
+    for(let i=0;i<n;i++){
+      const a = Math.random()*TAU;
+      const sp = (speed||70) * (0.5+Math.random());
+      particles.push({ x, y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, life:0.4+Math.random()*0.3, maxLife:0.7, color, size: 2+Math.random()*1.6 });
+    }
+  }
+
+  function spawnRipple(x, y, maxR, color, duration, lineWidth){
+    ripples.push({ x, y, maxR, duration, life: duration, color, lineWidth });
+  }
+
+  // Full-screen glow -> peak glare -> detonation -> shockwave sequence.
+  // Used for both the small orb pickup (fast, no label) and reaching the
+  // core (slower, bigger, labelled "CORE REACHED").
+  function triggerFlash(opts){
+    coreFillMax = opts.duration;
+    coreFillT = opts.duration;
+    coreExploded = false;
+    flashGrowDur = opts.growDur;
+    flashLabel = opts.label || null;
+    flashSecondaryRgb = opts.secondaryColorRgb;
+    flashBig = !!opts.big;
+    flashMilestone = !!opts.milestone;
+    coreFlashT = flashLabel ? 1.4 : 0;
+  }
+
+  function moveIn(){
+    if(state === 'title'){ startGame(); return; }
+    if(state !== 'playing') return;
+    if(ringIndex === 0){ coreReach(); return; }
+    ringIndex--;
+    sfx.move();
+    spawnBurst(cx+shipRadius*Math.cos(shipAngle), cy+shipRadius*Math.sin(shipAngle), 8, '234,246,255', 70);
+  }
+
+  function moveOut(){
+    if(state === 'title'){ startGame(); return; }
+    if(state !== 'playing') return;
+    if(ringIndex >= rings.length-1){ sfx.blocked(); return; }
+    ringIndex++;
+    sfx.move();
+    spawnBurst(cx+shipRadius*Math.cos(shipAngle), cy+shipRadius*Math.sin(shipAngle), 8, '111,227,201', 70);
+  }
+
+  function coreReach(){
+    score += 150 * multiplier + depth*15;
+    multiplier = Math.min(6, multiplier + 0.4);
+    depth++;
+    bestDepth = Math.max(bestDepth, depth);
+    masteryPeakDepth = Math.max(masteryPeakDepth, depth);
+    updateMasterySpeeds();
+
+    const milestone = depth % 5 === 0;
+    const flashDuration = milestone ? 0.75 : 0.55;
+    coreFlashT = 0; // set by triggerFlash below
+    sfx.coreRise();
+    triggerFlash({
+      duration: flashDuration,
+      growDur: milestone ? 0.3 : 0.24,
+      label: milestone ? `DEPTH ${depth} REACHED` : 'CORE REACHED',
+      secondaryColorRgb: hexToRgb(hazardColor()),
+      big: true,
+      milestone
+    });
+    vibrate(milestone ? [30,50,30,50,60] : [30,40,50]);
+
+    if(droneGain && actx){
+      droneGain.gain.linearRampToValueAtTime(Math.min(0.09, 0.055 + depth*0.003), actx.currentTime + 0.4);
+    }
+
+    // hazards for the new descent get repositioned (safely) by placeSafeHazards below,
+    // hidden behind the screen-filling glow. The shield is kept alive slightly
+    // LONGER than the flash itself — collision danger must never resume while
+    // the screen is still visually covered by the celebration effect, or the
+    // "reaction window" is real on paper but invisible to the player.
+    ringIndex = rings.length - 1;
+    invulnT = flashDuration + 0.15;
+    for(let i=0;i<rings.length;i++) placeSafeHazards(i, shipAngle);
+    orbs = [];
+    spawnOrbCluster();
+  }
+
+  function startGame(){
+    totalRuns++;
+
+    resetGame();
+    state = 'playing';
+    titleEl.style.opacity = 0;
+    titleEl.style.pointerEvents = 'none';
+    overEl.classList.remove('show');
+    hintEl.style.opacity = 1;
+    practiceEl.classList.remove('show');
+    setTimeout(()=>{ if(state==='playing') hintEl.style.opacity = 0; }, 3600);
+  }
+
+  function die(){
+    if(state !== 'playing') return;
+    state = 'dead';
+    sfx.death();
+    shakeT = 0.4;
+    timeScaleTarget = 0.12;
+    setTimeout(()=>{ timeScaleTarget = 1; }, 480);
+    vibrate([40,30,70]);
+    displayScore = score;
+    scoreEl.textContent = Math.round(score);
+    best = Math.max(best, Math.round(score));
+    finalScoreEl.textContent = Math.round(score);
+    bestEl.textContent = best;
+    bestDepthEl.textContent = bestDepth;
+    spawnBurst(cx+shipRadius*Math.cos(shipAngle), cy+shipRadius*Math.sin(shipAngle), 28, '255,61,99', 150);
+    setTimeout(()=>overEl.classList.add('show'), 250);
+
+    if(!feedbackEverShown && (bestDepth >= FEEDBACK_DEPTH_TRIGGER || totalRuns >= FEEDBACK_RUN_TRIGGER)){
+      feedbackEverShown = true;
+      setTimeout(showFeedback, 1400);
+    }
+  }
+
+  // ================= UPDATE =================
+  function update(dt){
+    t += dt;
+    // Difficulty layers on top of the invisible mastery ramp. Early play stays
+    // readable; deeper runs and sustained survival gradually become intense.
+    difficulty = Math.min(3.2, 1 + Math.max(0, depth-2)*0.12 + t*0.0025);
+
+    if(state === 'playing'){
+      shipRadius = rings[ringIndex].radius;
+
+      if(invulnT > 0){
+        invulnT = Math.max(0, invulnT - dt);
+        // world is fully paused during the shield: the ship does NOT advance
+        // its angle either, and hazards don't rotate (advanceHazards below is
+        // skipped). Everything holds in its safely-placed configuration and
+        // starts moving together the instant the shield drops — so there's
+        // no window where the ship can "catch up" to a motionless hazard.
+      } else {
+        shipAngle = norm01(shipAngle + shipSpeedCur*dt);
+        advanceHazards(dt);
+      }
+
+      score += dt * 2.2 * multiplier;
+      multiplier += (1 - multiplier) * dt * 0.18;
+
+      const ring = rings[ringIndex];
+      ring.hazards.forEach((hz, hi) => {
+        const { start, width } = hazardState(ring, hz);
+        const rel = norm01(shipAngle - start);
+        const key = ringHazardKey(ringIndex, hi);
+
+        if(invulnT > 0) return; // spawn shield: no collision or graze checks yet
+
+        if(rel < width){ die(); return; }
+
+        const d1 = Math.abs(normSigned(shipAngle - start));
+        const d2 = Math.abs(normSigned(shipAngle - (start+width)));
+        const dMin = Math.min(d1, d2);
+        if(dMin < GRAZE_THRESH){
+          if(!grazedFlags[key]){
+            grazedFlags[key] = true;
+            multiplier = Math.min(6, multiplier + 0.28);
+            score += 8 * multiplier;
+            sfx.graze(multiplier);
+            vibrate(12);
+          }
+        } else if(dMin > GRAZE_THRESH*2.2){
+          grazedFlags[key] = false;
+        }
+      });
+
+      const comboTier = Math.floor(multiplier);
+      if(comboTier > lastComboTier && COMBO_WORDS[comboTier]){
+        lastComboTier = comboTier;
+        spawnFloatingText(COMBO_WORDS[comboTier], hazardColor(), cx, cy - 150);
+        if(multEl){ multEl.classList.add('bump'); setTimeout(()=>multEl.classList.remove('bump'), 160); }
+      } else if(multiplier < 1.4){
+        lastComboTier = 0;
+      }
+
+      // Orb chain decay: letting the window lapse without a grab breaks the streak,
+      // so the next pickup (whenever it comes) starts a fresh chain at 1.
+      if(orbChainCount > 0 && (t - lastOrbPickupT) > ORB_CHAIN_WINDOW){
+        orbChainCount = 0;
+      }
+
+      // Rare timed cluster event, independent of core-reach clusters -- keeps
+      // the chain mechanic alive even on a long, uneventful dive.
+      if(t >= nextClusterEventT){
+        spawnOrbCluster();
+        nextClusterEventT = t + 18 + Math.random()*14;
+      }
+
+      if(orbs.length){
+        const stillHere = [];
+        orbs.forEach(o=>{
+          if(o.expiresAt && o.expiresAt <= t){
+            // unclaimed cluster orb timed out -- small fizzle, no score, no chain penalty
+            const ex = cx+rings[o.ring].radius*Math.cos(o.angle);
+            const ey = cy+rings[o.ring].radius*Math.sin(o.angle);
+            spawnBurst(ex, ey, 8, '120,130,170', 50);
+            return;
+          }
+          if(o.ring === ringIndex){
+            const d = Math.abs(normSigned(shipAngle - o.angle));
+            if(d < ORB_THRESH){
+              collectOrb(o);
+              return;
+            }
+          }
+          stillHere.push(o);
+        });
+        orbs = stillHere;
+      }
+      if(orbs.length === 0) spawnSingleOrb();
+
+      trail.push({x: cx+shipRadius*Math.cos(shipAngle), y: cy+shipRadius*Math.sin(shipAngle), life:0.25});
+      if(trail.length > 18) trail.shift();
+
+      displayScore += (score - displayScore) * Math.min(1, dt*6);
+      scoreEl.textContent = Math.round(displayScore);
+      depthEl.textContent = depth;
+      multEl.textContent = 'x' + multiplier.toFixed(1);
+
+      if(shimmerGain) shimmerGain.gain.value = Math.max(0, Math.min(0.06, (multiplier-1)/5 * 0.06));
+    }
+
+    // screen-filling glow sequence: grow, hold/peak, then explode + fade
+    if(coreFillT > 0){
+      coreFillT = Math.max(0, coreFillT - dt);
+      const elapsed = coreFillMax - coreFillT;
+      if(!coreExploded && elapsed >= flashGrowDur){
+        coreExploded = true;
+        const scaleUp = flashMilestone ? 1.35 : 1;
+        const burstN = Math.round((flashBig ? 46 : 24) * scaleUp);
+        const r1 = Math.round((flashBig ? 520 : 320) * scaleUp);
+        const r2 = Math.round((flashBig ? 640 : 440) * scaleUp);
+        const d1 = flashBig ? 1.0 : 0.7;
+        const d2 = flashBig ? 1.3 : 0.95;
+        spawnRipple(cx, cy, r1, '255,243,214', d1, flashBig?4:3);
+        spawnRipple(cx, cy, r2, flashSecondaryRgb, d2, flashBig?3:2);
+        if(flashMilestone) spawnRipple(cx, cy, r2*1.25, '111,227,201', d2*1.15, 2);
+        spawnBurst(cx, cy, burstN, '255,243,214', flashBig?190:150);
+        if(flashBig) sfx.coreBoom(); else sfx.orbBoom();
+      }
+    }
+
+    particles.forEach(p=>{ p.x+=p.vx*dt; p.y+=p.vy*dt; p.vx*=0.92; p.vy*=0.92; p.life-=dt; });
+    particles = particles.filter(p=>p.life>0);
+    trail.forEach(p=>p.life-=dt);
+    trail = trail.filter(p=>p.life>0);
+    ripples.forEach(r=>r.life-=dt);
+    ripples = ripples.filter(r=>r.life>0);
+    forks.forEach(f=>f.life-=dt);
+    forks = forks.filter(f=>f.life>0);
+    floatingTexts.forEach(f=>{ f.y += f.vy*dt; f.life -= dt; });
+    floatingTexts = floatingTexts.filter(f=>f.life>0);
+    if(shakeT>0) shakeT = Math.max(0, shakeT-dt);
+    if(coreFlashT>0) coreFlashT = Math.max(0, coreFlashT-dt);
+  }
+
+  function hexToRgb(hex){
+    const v = hex.replace('#','');
+    const n = parseInt(v,16);
+    return `${(n>>16)&255},${(n>>8)&255},${n&255}`;
+  }
+
+  // ================= DRAW =================
+  function draw(){
+    ctx.clearRect(0,0,LW,LH);
+
+    let ox=0, oy=0;
+    if(shakeT>0){
+      const m = shakeT*40;
+      ox = (Math.random()-0.5)*m; oy = (Math.random()-0.5)*m;
+    }
+    ctx.save();
+    ctx.translate(ox,oy);
+
+    ctx.fillStyle = '#05060d';
+    ctx.fillRect(-20,-20,LW+40,LH+40);
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    for(let i=0;i<40;i++){
+      const sx = (i*97 % LW), sy = (i*53 % LH);
+      const tw = 0.5+0.5*Math.sin(t*2 + i);
+      ctx.fillStyle = `rgba(180,195,230,${0.15+0.25*tw})`;
+      ctx.fillRect(sx, sy, 1.4, 1.4);
+    }
+    ctx.restore();
+
+    // living nebula backdrop — soft drifting color blobs tied to the current level's theme
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const nebulaRgb = [hexToRgb(hazardColor()), '111,227,201', '243,199,125'];
+    for(let i=0;i<3;i++){
+      const ang = t*0.045*(i%2===0?1:-1) + i*2.35;
+      const nx = cx + Math.cos(ang)*190;
+      const ny = cy + Math.sin(ang*0.7)*190;
+      const rad = 210 + 60*Math.sin(t*0.28 + i*1.8);
+      const ng = ctx.createRadialGradient(nx,ny,0, nx,ny, rad);
+      ng.addColorStop(0, `rgba(${nebulaRgb[i]},0.16)`);
+      ng.addColorStop(1, `rgba(${nebulaRgb[i]},0)`);
+      ctx.fillStyle = ng;
+      ctx.beginPath(); ctx.arc(nx,ny,rad,0,TAU); ctx.fill();
+    }
+    ctx.restore();
+
+    const pulse = 1 + 0.04*Math.sin(t*1.6) + (coreFlashT>0 ? coreFlashT*0.5 : 0);
+    const grad = ctx.createRadialGradient(cx,cy,0, cx,cy, 46*pulse);
+    grad.addColorStop(0, '#fff3d6');
+    grad.addColorStop(0.35, '#f3c77d');
+    grad.addColorStop(1, 'rgba(243,199,125,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(cx,cy,46*pulse,0,TAU); ctx.fill();
+    ctx.fillStyle = '#fff8e8';
+    ctx.beginPath(); ctx.arc(cx,cy,14,0,TAU); ctx.fill();
+
+    const hCol = hazardColor();
+    rings.forEach((ring, ri) => {
+      ctx.beginPath();
+      ctx.arc(cx,cy,ring.radius,0,TAU);
+      ctx.strokeStyle = ri===ringIndex ? 'rgba(111,227,201,0.28)' : 'rgba(43,58,99,0.55)';
+      ctx.lineWidth = ri===ringIndex ? 2 : 1;
+      ctx.stroke();
+
+      ring.hazards.forEach((hz, hi) => {
+        const { start, width } = hazardState(ring, hz);
+        const pulseW = 13 + 2.2*Math.sin(t*3 + ri*1.7 + hi*2.1);
+        ctx.beginPath();
+        ctx.arc(cx,cy,ring.radius,start,start+width);
+        ctx.lineWidth = pulseW;
+        ctx.strokeStyle = hCol;
+        ctx.shadowColor = hCol;
+        ctx.shadowBlur = 16;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      });
+    });
+
+    if(orbs && orbs.length){
+      const curCol = chainColor(orbChainCount);
+      const curRgb = hexToRgb(curCol);
+      orbs.forEach(o=>{
+        const r = rings[o.ring].radius;
+        const ox2 = cx + r*Math.cos(o.angle);
+        const oy2 = cy + r*Math.sin(o.angle);
+        let s = 5 + 1.6*Math.sin(t*5 + o.phase);
+        let urgency = 1;
+        if(o.expiresAt){
+          const remain = o.expiresAt - t;
+          if(remain < 2) urgency = 0.5 + 0.5*Math.sin(t*14);
+        }
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = urgency;
+        ctx.beginPath();
+        ctx.arc(ox2,oy2, s+7, 0, TAU);
+        ctx.fillStyle = `rgba(${curRgb},0.22)`;
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(ox2,oy2, s, 0, TAU);
+        ctx.fillStyle = curCol;
+        ctx.shadowColor = curCol;
+        ctx.shadowBlur = 14;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        for(let k=0;k<2;k++){
+          const sAng = t*3.2 + o.phase + k*Math.PI;
+          const spx = ox2 + Math.cos(sAng)*(s+11);
+          const spy = oy2 + Math.sin(sAng)*(s+11);
+          ctx.beginPath();
+          ctx.arc(spx,spy,1.8,0,TAU);
+          ctx.fillStyle = 'rgba(255,243,214,0.85)';
+          ctx.fill();
+        }
+        ctx.restore();
+      });
+    }
+
+    // electric fork payoff (chain 4+): jagged tendrils, deliberately different
+    // shape language from the round particle bursts used everywhere else, so
+    // the top chain tier reads as its own distinct reward.
+    if(forks.length){
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      forks.forEach(f=>{
+        const a = Math.max(0, f.life/f.maxLife);
+        const rgb = hexToRgb(f.color);
+        ctx.beginPath();
+        f.points.forEach((p,i)=>{ if(i===0) ctx.moveTo(p[0],p[1]); else ctx.lineTo(p[0],p[1]); });
+        ctx.strokeStyle = `rgba(${rgb},${a})`;
+        ctx.lineWidth = 2.2;
+        ctx.shadowColor = f.color;
+        ctx.shadowBlur = 16;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      });
+      ctx.restore();
+    }
+
+    trail.forEach(p=>{
+      ctx.globalAlpha = (p.life/0.25) * 0.5;
+      ctx.beginPath();
+      ctx.arc(p.x,p.y, 3, 0, TAU);
+      ctx.fillStyle = '#eaf6ff';
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+
+    if(state !== 'title'){
+      const sx = cx + shipRadius*Math.cos(shipAngle);
+      const sy = cy + shipRadius*Math.sin(shipAngle);
+      const heading = shipAngle + Math.PI/2;
+
+      if(state === 'playing' && invulnT > 0){
+        const sAlpha = Math.min(1, invulnT/0.5);
+        ctx.beginPath();
+        ctx.arc(sx, sy, 19 + Math.sin(t*10)*1.5, 0, TAU);
+        ctx.strokeStyle = `rgba(111,227,201,${0.55*sAlpha})`;
+        ctx.lineWidth = 2;
+        ctx.shadowColor = '#6fe3c9';
+        ctx.shadowBlur = 10;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+
+      ctx.save();
+      ctx.translate(sx,sy);
+      ctx.rotate(heading);
+      ctx.beginPath();
+      ctx.arc(0,0,14,0,TAU);
+      ctx.fillStyle = 'rgba(234,246,255,0.12)';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(0,-9);
+      ctx.lineTo(6,7);
+      ctx.lineTo(0,3.5);
+      ctx.lineTo(-6,7);
+      ctx.closePath();
+      ctx.fillStyle = '#eaf6ff';
+      ctx.shadowColor = '#eaf6ff';
+      ctx.shadowBlur = 10;
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // glowing particles, additive blend
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    particles.forEach(p=>{
+      const a = Math.max(0, p.life/p.maxLife);
+      const r = (p.size||2.4) * (0.6+0.4*a) * 2.6;
+      const g2 = ctx.createRadialGradient(p.x,p.y,0, p.x,p.y, r);
+      g2.addColorStop(0, `rgba(${p.color},${a})`);
+      g2.addColorStop(1, `rgba(${p.color},0)`);
+      ctx.fillStyle = g2;
+      ctx.beginPath(); ctx.arc(p.x,p.y,r,0,TAU); ctx.fill();
+    });
+    ctx.restore();
+
+    // concentric ripples
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ripples.forEach(r=>{
+      const p = 1 - r.life/r.duration;
+      const rad = r.maxR * easeOutCubic(p);
+      const alpha = (1-p) * 0.75;
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, rad, 0, TAU);
+      ctx.strokeStyle = `rgba(${r.color},${alpha})`;
+      ctx.lineWidth = r.lineWidth * (1 - p*0.5);
+      ctx.shadowColor = `rgba(${r.color},1)`;
+      ctx.shadowBlur = 14;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    });
+    ctx.restore();
+
+    // screen-filling glow (grow, peak, fade) — shared by orb pickup and core reach
+    let flashAlphaNow = 0;
+    if(coreFillT > 0){
+      const elapsed = coreFillMax - coreFillT;
+      const growDur = flashGrowDur;
+      const peakAlpha = flashBig ? 0.92 : 0.8;
+      let alpha, radius;
+      const maxR = Math.max(LW,LH) * 0.85;
+      if(elapsed < growDur){
+        const p = elapsed / growDur;
+        radius = p * maxR;
+        alpha = p * peakAlpha;
+      } else {
+        const p = Math.min(1, (elapsed-growDur) / (coreFillMax-growDur));
+        radius = maxR;
+        alpha = (1-p) * peakAlpha;
+      }
+      flashAlphaNow = alpha;
+      const g3 = ctx.createRadialGradient(cx,cy,0, cx,cy, radius);
+      g3.addColorStop(0, `rgba(255,243,214,${alpha})`);
+      g3.addColorStop(0.55, `rgba(243,199,125,${alpha*0.85})`);
+      g3.addColorStop(1, `rgba(243,199,125,0)`);
+      ctx.fillStyle = g3;
+      ctx.fillRect(0,0,LW,LH);
+    }
+
+    // X-ray silhouettes: punched through the glare so the ship and hazards
+    // never actually disappear during the blind-white moment. Two passes:
+    // 'difference' guarantees the shape reads against ANY brightness underneath
+    // (a white shape inverts whatever color it sits on, so it can't wash out
+    // the way a normal fill would at high glow alpha); 'lighter' on top adds a
+    // vivid, saturated glow so the cut-through shapes pop rather than reading
+    // as flat gray silhouettes. Only bothers drawing once the glow is bright
+    // enough to actually need it.
+    if(flashAlphaNow > 0.2){
+      const xrayStrength = Math.min(1, (flashAlphaNow - 0.2) / 0.5);
+      const hCol = hazardColor();
+      const hRgb = hexToRgb(hCol);
+      const flicker = 0.85 + 0.15*Math.sin(t*26);
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'difference';
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = '#ffffff';
+      rings.forEach(ring=>{
+        ring.hazards.forEach(hz=>{
+          const { start, width } = hazardState(ring, hz);
+          ctx.lineWidth = 15;
+          ctx.beginPath();
+          ctx.arc(cx,cy,ring.radius,start,start+width);
+          ctx.stroke();
+        });
+      });
+      if(state !== 'title'){
+        const sx = cx + shipRadius*Math.cos(shipAngle);
+        const sy = cy + shipRadius*Math.sin(shipAngle);
+        ctx.beginPath();
+        ctx.arc(sx, sy, 15, 0, TAU);
+        ctx.fill();
+      }
+      ctx.restore();
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = xrayStrength * flicker;
+      rings.forEach(ring=>{
+        ring.hazards.forEach(hz=>{
+          const { start, width } = hazardState(ring, hz);
+          ctx.lineWidth = 6;
+          ctx.strokeStyle = `rgba(${hRgb},0.95)`;
+          ctx.shadowColor = hCol;
+          ctx.shadowBlur = 22;
+          ctx.beginPath();
+          ctx.arc(cx,cy,ring.radius,start,start+width);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        });
+      });
+      if(state !== 'title'){
+        const sx = cx + shipRadius*Math.cos(shipAngle);
+        const sy = cy + shipRadius*Math.sin(shipAngle);
+        ctx.beginPath();
+        ctx.arc(sx, sy, 9, 0, TAU);
+        ctx.fillStyle = '#eaf6ff';
+        ctx.shadowColor = '#eaf6ff';
+        ctx.shadowBlur = 24;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+      ctx.restore();
+    }
+
+    // floating combo callouts ("NICE", "GREAT", ...)
+    floatingTexts.forEach(f=>{
+      const p = 1 - f.life/f.maxLife;
+      const alpha = f.life/f.maxLife;
+      const scale = p < 0.25 ? easeOutCubic(p/0.25) : 1;
+      ctx.save();
+      ctx.translate(f.x, f.y);
+      ctx.scale(scale, scale);
+      ctx.globalAlpha = alpha;
+      ctx.font = 'bold 20px Courier New, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = f.color;
+      ctx.shadowColor = f.color;
+      ctx.shadowBlur = 14;
+      ctx.fillText(f.text, 0, 0);
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    });
+    ctx.globalAlpha = 1;
+
+    if(coreFlashT > 0 && flashLabel){
+      ctx.globalAlpha = Math.min(1, coreFlashT/0.5);
+      ctx.font = flashMilestone ? 'bold 26px Courier New, monospace' : 'bold 22px Courier New, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = flashMilestone ? '#eaf6ff' : '#fff3d6';
+      ctx.shadowColor = flashMilestone ? '#6fe3c9' : '#f3c77d';
+      ctx.shadowBlur = flashMilestone ? 24 : 18;
+      ctx.fillText(flashLabel, cx, cy - 70);
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.restore();
+  }
+
+  let last = performance.now();
+  function loop(now){
+    const realDt = Math.min(0.033, (now-last)/1000);
+    last = now;
+    timeScale += (timeScaleTarget - timeScale) * Math.min(1, realDt*8);
+    const dt = realDt * timeScale;
+    update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  frame.addEventListener('pointerdown', (e)=>{
+    primeAudio();
+    if(state === 'title') startGame();
+  });
+
+  inBtn.addEventListener('pointerdown', (e)=>{ e.stopPropagation(); primeAudio(); moveIn(); });
+  outBtn.addEventListener('pointerdown', (e)=>{ e.stopPropagation(); primeAudio(); moveOut(); });
+
+  window.addEventListener('keydown', (e)=>{
+    if(e.code === 'ArrowDown' || e.code === 'KeyS'){ primeAudio(); moveIn(); }
+    if(e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space'){ primeAudio(); moveOut(); }
+  });
+
+  retryBtn.addEventListener('pointerdown', (e)=>{
+    e.stopPropagation();
+    primeAudio();
+    overEl.classList.remove('show');
+    startGame();
+  });
+
+  state = 'title';
+  resetGame();
+  shipRadius = rings[ringIndex].radius;
+  resize();
+  requestAnimationFrame((n)=>{ last=n; requestAnimationFrame(loop); });
+})();
+</script>
+</body>
+</html>
